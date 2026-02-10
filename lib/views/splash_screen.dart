@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:hrm/views/login_section/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:hrm/views/login_section/sign-up.dart';
 
 import 'main_root.dart';
 
@@ -37,7 +37,7 @@ class _SplashScreenState extends State<SplashScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => isLoggedIn ? const MainRoot() : const SignupScreen(),
+        builder: (_) => isLoggedIn ? const MainRoot() : const LoginScreen(),
       ),
     );
   }
