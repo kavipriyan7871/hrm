@@ -210,10 +210,10 @@ class _DashboardState extends State<Dashboard> {
                   SizedBox(width: w * 0.03),
                   Expanded(
                     child: Text(
-                      "Company Announcement \n New HR policy updates available.",
+                      "Company Announcement\nNew HR policy updates available.",
                       style: GoogleFonts.poppins(
                         color: Colors.white,
-                        fontSize: isTablet ? 12 : 12,
+                        fontSize: isTablet ? 18 : 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

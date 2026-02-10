@@ -3,6 +3,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
 
 import 'login_screen.dart';
 
@@ -337,6 +339,24 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  /// GET DEVICE ID
+  Future<String> _getDeviceId() async {
+    String deviceId = "123456";
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        deviceId = androidInfo.id;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        deviceId = iosInfo.identifierForVendor ?? "123456";
+      }
+    } catch (e) {
+      debugPrint("Could not get real device ID: $e");
+    }
+    return deviceId;
+  }
+
   /// ✅ SIGNUP API CALL
   Future<void> _signupApiCall() async {
     if (!_isAgreed) {
@@ -360,7 +380,7 @@ class _SignupScreenState extends State<SignupScreen> {
           "email": emailCtrl.text.trim(),
           "cid": "21472147",
           "type": "2045",
-          "device_id": "123456",
+          "device_id": await _getDeviceId(),
           "ln": lng,
           "lt": lat,
         },

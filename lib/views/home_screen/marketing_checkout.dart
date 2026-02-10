@@ -32,6 +32,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? employeeTableId; // To store the correct employee ID
   String? employeeCode;
   String? employeeName;
+  String? employeeProfilePhoto;
   bool _isEmpLoading = false;
 
   @override
@@ -79,7 +80,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         if (empId != null && empId != "null" && empId.isNotEmpty) {
           await prefs.setString('employee_table_id', empId);
-          setState(() => employeeTableId = empId);
+          setState(() {
+            employeeTableId = empId;
+            employeeName = data["name"]?.toString();
+            employeeCode = data["employee_code"]?.toString();
+            employeeProfilePhoto =
+                data["photo"]?.toString() ?? data["profile_image"]?.toString();
+          });
+
+          if (employeeName != null)
+            await prefs.setString('name', employeeName!);
+          if (employeeCode != null)
+            await prefs.setString('employee_code', employeeCode!);
+          if (employeeProfilePhoto != null)
+            await prefs.setString('profile_photo', employeeProfilePhoto!);
+
           debugPrint("Employee ID fetched: $empId");
         } else {
           debugPrint("CRITICAL: Employee ID missing in response: $res");
@@ -354,8 +369,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 employeeId: employeeCode!,
                 designation:
                     "", // Designation not in API response shown in logs
-                profileImagePath:
-                    "assets/profile.png", // Placeholder or from API if avail
+                profileImagePath: employeeProfilePhoto ?? "assets/profile.png",
               ),
 
             SizedBox(height: isTablet ? 30 : 20),

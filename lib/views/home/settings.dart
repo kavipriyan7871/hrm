@@ -425,8 +425,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             final prefs = await SharedPreferences.getInstance();
-                            await prefs
-                                .clear(); // Optional: clear data on logout
+                            // Preserve location data
+                            final double? lat = prefs.getDouble('lat');
+                            final double? lng = prefs.getDouble('lng');
+
+                            await prefs.clear(); // Clear all data on logout
+
+                            // Restore location data
+                            if (lat != null) await prefs.setDouble('lat', lat);
+                            if (lng != null) await prefs.setDouble('lng', lng);
 
                             if (mounted) {
                               Navigator.pushAndRemoveUntil(

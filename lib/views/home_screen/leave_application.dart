@@ -1,21 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../models/leave_api.dart';
-import '../../models/employee_api.dart';
+
 import 'leave_management.dart';
 import 'permission_form.dart';
-
-// Helper extension for 12-hour time format
-extension TimeOfDayExtension on TimeOfDay {
-  String format12Hour() {
-    final hour = hourOfPeriod == 0 ? 12 : hourOfPeriod;
-    final minute = this.minute.toString().padLeft(2, '0');
-    final period = this.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$hour:$minute $period';
-  }
-}
 
 class LeaveApplication extends StatelessWidget {
   const LeaveApplication({super.key});
@@ -75,9 +67,9 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
         children: [
           const SizedBox(height: 20),
 
-          /// Tabs (UNCHANGED)
+          /// TABS (UNCHANGED)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.grey.shade200,
               borderRadius: BorderRadius.circular(30),
@@ -100,9 +92,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color: selectedTab == 0
-                              ? Colors.white
-                              : Colors.grey.shade700,
+                          color: selectedTab == 0 ? Colors.white : Colors.black,
                         ),
                       ),
                     ),
@@ -136,7 +126,6 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
           ),
 
           const SizedBox(height: 30),
-
           if (selectedTab == 0) const LeaveForm() else const PermissionForm(),
         ],
       ),
@@ -154,11 +143,8 @@ class LeaveForm extends StatefulWidget {
 class _LeaveFormState extends State<LeaveForm> {
   final _formKey = GlobalKey<FormState>();
 
-  String? employeeName;
   String? employeeTableId;
-
-  // 🔥 FIX: wait controller
-  final Completer<void> _employeeLoadCompleter = Completer<void>();
+  final Completer<void> _employeeCompleter = Completer<void>();
 
   String? leaveType;
   DateTime? fromDate;
@@ -168,131 +154,139 @@ class _LeaveFormState extends State<LeaveForm> {
   List<String> leaveTypes = [];
   bool isLoading = false;
 
+  static const String baseUrl = "https://erpsmart.in/total/api/m_api/";
+
   @override
   void initState() {
     super.initState();
-    _loadEmployeeDetails();
+    _loadEmployeeId();
     _fetchLeaveTypes();
   }
 
-  /// FETCH EMPLOYEE DETAILS (FIXED – UI UNCHANGED)
-  Future<void> _loadEmployeeDetails() async {
+  /// ================= EMPLOYEE ID =================
+  Future<void> _loadEmployeeId() async {
     final prefs = await SharedPreferences.getInstance();
-    final loginUid = (prefs.getInt('uid') ?? 0).toString();
 
-    try {
-      final res = await EmployeeApi.getEmployeeDetails(
-        uid: loginUid,
-        cid: "21472147",
-        deviceId: "123456",
-        lat: prefs.getDouble('lat')?.toString() ?? "123",
-        lng: prefs.getDouble('lng')?.toString() ?? "123",
-      );
-
-      if (res["error"] == false && res["data"] != null) {
-        employeeName = res["data"]["name"]?.toString();
-        employeeTableId = res["data"]["id"]?.toString();
-
-        await prefs.setString('employee_table_id', employeeTableId!);
-      }
-    } catch (e) {
-      debugPrint("Employee fetch error => $e");
-    } finally {
-      if (!_employeeLoadCompleter.isCompleted) {
-        _employeeLoadCompleter.complete(); // 🔥 KEY FIX
-      }
-    }
-  }
-
-  /// FETCH LEAVE TYPES (UNCHANGED)
-  Future<void> _fetchLeaveTypes() async {
-    try {
-      final res = await LeaveApi.getLeaveTypes(
-        cid: "21472147",
-        deviceId: "123456",
-        lat: "123",
-        lng: "123",
-      );
-
-      if (res["error"] == false &&
-          res["data"] != null &&
-          res["data"]["leave_types"] != null) {
-        final List list = res["data"]["leave_types"];
-        setState(() {
-          leaveTypes = list
-              .map((e) => e["leave_type_name"].toString())
-              .toList();
-        });
-      }
-    } catch (e) {
-      debugPrint("Leave type error => $e");
-    }
-  }
-
-  /// APPLY LEAVE (FIXED – WAITS FOR EMPLOYEE)
-  Future<void> _applyLeave() async {
-    debugPrint("===== SUBMIT CLICKED =====");
-
-    if (!_formKey.currentState!.validate() ||
-        fromDate == null ||
-        toDate == null) {
-      _snack("Please fill all fields", false);
+    final stored = prefs.getString("employee_table_id");
+    if (stored != null && stored.isNotEmpty) {
+      employeeTableId = stored;
+      _employeeCompleter.complete();
       return;
     }
 
-    if (employeeTableId == null) {
-      debugPrint("WAITING FOR EMPLOYEE DETAILS...");
-      await _employeeLoadCompleter.future;
+    final uid = prefs.getInt("uid")?.toString();
+    if (uid == null) {
+      _employeeCompleter.complete();
+      return;
     }
 
-    debugPrint("EMPLOYEE TABLE ID AFTER WAIT => $employeeTableId");
+    try {
+      final res = await http.post(
+        Uri.parse(baseUrl),
+        body: {
+          "type": "2048",
+          "cid": "21472147",
+          "uid": uid,
+          "device_id": "123456",
+          "lt": "123",
+          "ln": "123",
+        },
+      );
 
-    if (employeeTableId == null || employeeTableId!.isEmpty) {
-      _snack("Employee details not available. Please re-login.", false);
+      final data = jsonDecode(res.body);
+
+      if (data["error"] == false) {
+        final empId = data["data"]?["id"]?.toString();
+        if (empId != null && empId.isNotEmpty) {
+          employeeTableId = empId;
+          await prefs.setString("employee_table_id", empId);
+        }
+      }
+    } catch (_) {}
+    _employeeCompleter.complete();
+  }
+
+  /// ================= LEAVE TYPES =================
+  Future<void> _fetchLeaveTypes() async {
+    final res = await http.post(
+      Uri.parse(baseUrl),
+      body: {
+        "type": "2044",
+        "cid": "21472147",
+        "device_id": "123456",
+        "lt": "123",
+        "ln": "123",
+      },
+    );
+
+    final data = jsonDecode(res.body);
+
+    if (data["error"] == false) {
+      setState(() {
+        leaveTypes = List<String>.from(
+          data["data"]["leave_types"].map(
+            (e) => e["leave_type_name"].toString(),
+          ),
+        );
+      });
+    }
+  }
+
+  /// ================= APPLY LEAVE =================
+  Future<void> _applyLeave() async {
+    if (!_formKey.currentState!.validate() ||
+        fromDate == null ||
+        toDate == null) {
+      _snack("Fill all fields", false);
+      return;
+    }
+
+    await _employeeCompleter.future;
+
+    if (employeeTableId == null) {
+      _snack("Employee not found. Re-login", false);
       return;
     }
 
     setState(() => isLoading = true);
 
-    try {
-      final res = await LeaveApi.applyLeave(
-        uid: employeeTableId!,
-        leaveType: leaveType!,
-        fromDate:
+    final res = await http.post(
+      Uri.parse(baseUrl),
+      body: {
+        "type": "2043",
+        "uid": employeeTableId!,
+        "leave_type": leaveType!,
+        "leave_start_date":
             "${fromDate!.year}-${fromDate!.month.toString().padLeft(2, '0')}-${fromDate!.day.toString().padLeft(2, '0')}",
-        toDate:
+        "leave_end_date":
             "${toDate!.year}-${toDate!.month.toString().padLeft(2, '0')}-${toDate!.day.toString().padLeft(2, '0')}",
-        reason: reason!,
-        cid: "21472147",
-        deviceId: "123456",
-        lat: "145",
-        lng: "145",
-      );
+        "reason": reason!,
+        "cid": "21472147",
+        "device_id": "123456",
+        "lt": "123",
+        "ln": "123",
+      },
+    );
 
-      debugPrint("APPLY LEAVE API RESPONSE => $res");
+    final data = jsonDecode(res.body);
 
-      if (res["error"] == false) {
-        _snack(res["error_msg"] ?? "Leave applied successfully", true);
-        _formKey.currentState!.reset();
-        setState(() {
-          fromDate = null;
-          toDate = null;
-          leaveType = null;
-          reason = null;
-        });
-      } else {
-        _snack(res["error_msg"] ?? "Failed to apply leave", false);
-      }
-    } catch (e) {
-      debugPrint("Apply leave error => $e");
-      _snack("Server error", false);
-    } finally {
-      setState(() => isLoading = false);
+    if (data["error"] == false) {
+      _snack("Leave applied successfully", true);
+      _formKey.currentState!.reset();
+      setState(() {
+        fromDate = null;
+        toDate = null;
+        leaveType = null;
+        reason = null;
+      });
+    } else {
+      _snack(data["error_msg"] ?? "Failed", false);
     }
+
+    setState(() => isLoading = false);
   }
 
   void _snack(String msg, bool success) {
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
@@ -301,8 +295,7 @@ class _LeaveFormState extends State<LeaveForm> {
     );
   }
 
-  /// ================= UI BELOW – 100% SAME =================
-
+  /// ================= UI (UNCHANGED) =================
   @override
   Widget build(BuildContext context) {
     return Form(
@@ -374,18 +367,14 @@ class _LeaveFormState extends State<LeaveForm> {
             );
             if (picked != null) {
               setState(() {
-                if (isFrom) {
-                  fromDate = picked;
-                } else {
-                  toDate = picked;
-                }
+                isFrom ? fromDate = picked : toDate = picked;
               });
             }
           },
           child: Container(
             height: 56,
-            alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.centerLeft,
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(12),
