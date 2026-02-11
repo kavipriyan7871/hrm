@@ -45,6 +45,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
 
     // If not found, fetch from API
     final loginUid = (prefs.getInt('uid') ?? 0).toString();
+
+    // If we have a loginUid, trust it as the employee_table_id immediately
+    if (loginUid != "0") {
+      await prefs.setString('employee_table_id', loginUid);
+      setState(() {
+        employeeTableId = loginUid;
+        _isEmpLoading = false;
+      });
+    }
+
     try {
       final res = await EmployeeApi.getEmployeeDetails(
         uid: loginUid,
@@ -58,19 +68,9 @@ class _MarketingScreenState extends State<MarketingScreen> {
         // Handle flat structure or nested "data"
         final data = res["data"] ?? res;
 
-        // Try 'id' first, then 'employee_code'
-        var empId = data["id"]?.toString();
-        if (empId == null || empId == "null" || empId.isEmpty) {
-          empId = data["employee_code"]?.toString();
-        }
-
-        if (empId != null && empId != "null" && empId.isNotEmpty) {
-          await prefs.setString('employee_table_id', empId);
-          setState(() => employeeTableId = empId);
-          debugPrint("Employee ID fetched: $empId");
-        } else {
-          debugPrint("CRITICAL: Employee ID missing in response: $res");
-        }
+        // We only care about details, ID is already settled
+        // Logic to update other details if needed could go here
+        debugPrint("Employee Details Fetched for $loginUid");
       }
     } catch (e) {
       debugPrint("Employee fetch error => $e");

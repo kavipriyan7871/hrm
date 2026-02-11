@@ -79,7 +79,7 @@ class MarketingApi {
       if (attachment != null) {
         request.files.add(
           await http.MultipartFile.fromPath(
-            'attachment',
+            'attachments',
             attachment.path,
             contentType: MediaType('image', 'jpeg'), // Or dynamic
           ),

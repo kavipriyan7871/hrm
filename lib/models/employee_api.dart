@@ -15,7 +15,8 @@ class EmployeeApi {
       final body = {
         "type": "2048",
         "cid": cid,
-        "id": uid,
+        "uid": uid,
+        "id": uid, // Sending both to ensure backward compatibility
         "device_id": deviceId,
         "lt": lat,
         "ln": lng,

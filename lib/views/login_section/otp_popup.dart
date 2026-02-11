@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/login_api.dart';
+import '../../models/employee_api.dart';
 import '../main_root.dart';
 
 class OtpBottomSheet extends StatefulWidget {
@@ -94,7 +95,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// Header
               Row(
                 children: [
                   CircleAvatar(
@@ -124,7 +124,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
               SizedBox(height: height * 0.03),
 
-              /// Message
               RichText(
                 text: TextSpan(
                   text: "Waiting to automatically detect an OTP sent to \n",
@@ -156,7 +155,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
               SizedBox(height: height * 0.03),
 
-              /// OTP Boxes
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(
@@ -172,7 +170,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
               SizedBox(height: height * 0.02),
 
-              /// Resend & Timer
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -202,7 +199,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
               SizedBox(height: height * 0.04),
 
-              /// Verify button
               SizedBox(
                 width: double.infinity,
                 height: height * 0.06,
@@ -238,7 +234,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
     );
   }
 
-  /// OTP BOX
   Widget _otpBox(int index, double width, double height, double fontSize) {
     return SizedBox(
       width: width,
@@ -277,7 +272,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
     );
   }
 
-  /// ✅ VERIFY OTP API
+  /// ✅ VERIFY OTP API – DEBUG PRINTS ADDED
   Future<void> _verifyOtpApi() async {
     String otp = controllers.map((e) => e.text).join();
 
@@ -304,6 +299,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
         appSignature: "smart123",
       );
 
+      /// 🔍 DEBUG – FULL RESPONSE
       debugPrint("VERIFY OTP RESPONSE => $response");
 
       final bool isSuccess =
@@ -313,28 +309,84 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
           response["status"] == 1;
 
       if (isSuccess) {
-        _snack("OTP verified successfully", true);
-
         final prefs = await SharedPreferences.getInstance();
-
-        /// ✅ MARK USER AS LOGGED IN (THIS IS THE KEY)
         await prefs.setBool('isLoggedIn', true);
 
-        // Store user data (already you are doing)
-        String? userIdStr;
-        if (response["data"] != null) {
-          final userData = response["data"];
-          userIdStr = (userData["uid"] ?? userData["id"])?.toString();
-          await prefs.setString('name', userData["name"]?.toString() ?? "User");
+        String? employeeId;
+
+        // robustly find UID
+        if (response["data"] != null && response["data"] is Map) {
+          final data = response["data"];
+          employeeId = (data["uid"] ?? data["id"] ?? data["user_id"])
+              ?.toString();
+          await prefs.setString("name", data["name"] ?? "User");
         }
 
-        userIdStr ??= (response["cus_id"] ?? widget.cusId)?.toString();
-
-        if (userIdStr != null && userIdStr.isNotEmpty) {
-          await prefs.setInt('uid', int.tryParse(userIdStr) ?? 0);
+        // If not found in data, check root level
+        if (employeeId == null) {
+          employeeId =
+              (response["uid"] ?? response["id"] ?? response["user_id"])
+                  ?.toString();
         }
 
-        /// GO TO DASHBOARD
+        employeeId ??= widget.cusId;
+
+        // --- NEW LOGIC START: Fetch from EmployeeApi to get the "correct" UID ---
+        try {
+          if (employeeId != null) {
+            debugPrint(
+              "Fetching EmployeeDetails to confirm UID for: $employeeId",
+            );
+            final empRes = await EmployeeApi.getEmployeeDetails(
+              uid: employeeId!,
+              cid: "21472147",
+              deviceId: "123456",
+              lat: lat,
+              lng: lng,
+            );
+
+            debugPrint("OTP Employee Fetch Response: $empRes");
+
+            if (empRes["error"] == false) {
+              final empData = empRes["data"] ?? empRes;
+              String? apiUid =
+                  (empData["uid"] ?? empData["id"] ?? empData["user_id"])
+                      ?.toString();
+
+              if (apiUid != null && apiUid.isNotEmpty) {
+                debugPrint(
+                  "Updating UID from EmployeeApi: $employeeId -> $apiUid",
+                );
+                employeeId = apiUid;
+              }
+
+              // Also update name from this authoritative source if available
+              if (empData["name"] != null) {
+                await prefs.setString("name", empData["name"].toString());
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint("Error fetching employee details in OTP popup: $e");
+        }
+        // --- NEW LOGIC END ---
+
+        /// 🔍 DEBUG – BEFORE STORE
+        debugPrint("EMPLOYEE ID BEFORE STORE => $employeeId");
+
+        if (employeeId != null && employeeId.isNotEmpty) {
+          await prefs.setString("employee_table_id", employeeId);
+          await prefs.setInt("uid", int.tryParse(employeeId) ?? 0);
+
+          /// 🔍 DEBUG – AFTER STORE
+          debugPrint(
+            "PREF employee_table_id => ${prefs.getString("employee_table_id")}",
+          );
+          debugPrint("PREF uid => ${prefs.getInt("uid")}");
+        }
+
+        _snack("OTP verified successfully", true);
+
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => MainRoot()),
@@ -354,7 +406,6 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
     setState(() => isLoading = false);
   }
 
-  /// 🔄 RESEND OTP API
   Future<void> _resendOtpApi() async {
     setState(() => isLoading = true);
 
@@ -385,12 +436,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
         _snack("OTP Resent Successfully", true);
         startTimer();
       } else {
-        _snack(
-          response["error_msg"] ??
-              response["message"] ??
-              "Failed to resend OTP",
-          false,
-        );
+        _snack("Failed to resend OTP", false);
       }
     } catch (e) {
       debugPrint("RESEND OTP ERROR => $e");

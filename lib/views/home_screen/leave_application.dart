@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'leave_management.dart';
 import 'permission_form.dart';
@@ -67,7 +69,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
         children: [
           const SizedBox(height: 20),
 
-          /// TABS (UNCHANGED)
+          /// TABS
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -92,7 +94,8 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color: selectedTab == 0 ? Colors.white : Colors.black,
+                          color:
+                              selectedTab == 0 ? Colors.white : Colors.black,
                         ),
                       ),
                     ),
@@ -115,7 +118,8 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color: selectedTab == 1 ? Colors.white : Colors.black,
+                          color:
+                              selectedTab == 1 ? Colors.white : Colors.black,
                         ),
                       ),
                     ),
@@ -150,6 +154,7 @@ class _LeaveFormState extends State<LeaveForm> {
   DateTime? fromDate;
   DateTime? toDate;
   String? reason;
+  File? attachment;
 
   List<String> leaveTypes = [];
   bool isLoading = false;
@@ -163,50 +168,17 @@ class _LeaveFormState extends State<LeaveForm> {
     _fetchLeaveTypes();
   }
 
-  /// ================= EMPLOYEE ID =================
+  /// 🔥 ONLY READ STORED EMPLOYEE ID
   Future<void> _loadEmployeeId() async {
     final prefs = await SharedPreferences.getInstance();
+    employeeTableId = prefs.getString("employee_table_id");
 
-    final stored = prefs.getString("employee_table_id");
-    if (stored != null && stored.isNotEmpty) {
-      employeeTableId = stored;
-      _employeeCompleter.complete();
-      return;
-    }
+    // DEBUG (optional – can remove later)
+    debugPrint("LEAVE SCREEN EMP ID => $employeeTableId");
 
-    final uid = prefs.getInt("uid")?.toString();
-    if (uid == null) {
-      _employeeCompleter.complete();
-      return;
-    }
-
-    try {
-      final res = await http.post(
-        Uri.parse(baseUrl),
-        body: {
-          "type": "2048",
-          "cid": "21472147",
-          "uid": uid,
-          "device_id": "123456",
-          "lt": "123",
-          "ln": "123",
-        },
-      );
-
-      final data = jsonDecode(res.body);
-
-      if (data["error"] == false) {
-        final empId = data["data"]?["id"]?.toString();
-        if (empId != null && empId.isNotEmpty) {
-          employeeTableId = empId;
-          await prefs.setString("employee_table_id", empId);
-        }
-      }
-    } catch (_) {}
     _employeeCompleter.complete();
   }
 
-  /// ================= LEAVE TYPES =================
   Future<void> _fetchLeaveTypes() async {
     final res = await http.post(
       Uri.parse(baseUrl),
@@ -220,19 +192,25 @@ class _LeaveFormState extends State<LeaveForm> {
     );
 
     final data = jsonDecode(res.body);
-
     if (data["error"] == false) {
       setState(() {
         leaveTypes = List<String>.from(
-          data["data"]["leave_types"].map(
-            (e) => e["leave_type_name"].toString(),
-          ),
+          data["data"]["leave_types"]
+              .map((e) => e["leave_type_name"].toString()),
         );
       });
     }
   }
 
-  /// ================= APPLY LEAVE =================
+  Future<void> _pickAttachment() async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result != null) {
+      setState(() {
+        attachment = File(result.files.single.path!);
+      });
+    }
+  }
+
   Future<void> _applyLeave() async {
     if (!_formKey.currentState!.validate() ||
         fromDate == null ||
@@ -243,32 +221,39 @@ class _LeaveFormState extends State<LeaveForm> {
 
     await _employeeCompleter.future;
 
-    if (employeeTableId == null) {
-      _snack("Employee not found. Re-login", false);
+    if (employeeTableId == null || employeeTableId!.isEmpty) {
+      _snack("Employee not found. Please login again.", false);
       return;
     }
 
-    setState(() => isLoading = true);
+    final request =
+        http.MultipartRequest("POST", Uri.parse(baseUrl));
 
-    final res = await http.post(
-      Uri.parse(baseUrl),
-      body: {
-        "type": "2043",
-        "uid": employeeTableId!,
-        "leave_type": leaveType!,
-        "leave_start_date":
-            "${fromDate!.year}-${fromDate!.month.toString().padLeft(2, '0')}-${fromDate!.day.toString().padLeft(2, '0')}",
-        "leave_end_date":
-            "${toDate!.year}-${toDate!.month.toString().padLeft(2, '0')}-${toDate!.day.toString().padLeft(2, '0')}",
-        "reason": reason!,
-        "cid": "21472147",
-        "device_id": "123456",
-        "lt": "123",
-        "ln": "123",
-      },
-    );
+    request.fields.addAll({
+      "type": "2043",
+      "uid": employeeTableId!, // ✅ CORRECT ID
+      "leave_type": leaveType!,
+      "leave_start_date": _formatDate(fromDate!),
+      "leave_end_date": _formatDate(toDate!),
+      "reason": reason!,
+      "cid": "21472147",
+      "device_id": "123456",
+      "lt": "145",
+      "ln": "145",
+    });
 
-    final data = jsonDecode(res.body);
+    if (attachment != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          "attachment",
+          attachment!.path,
+        ),
+      );
+    }
+
+    final response = await request.send();
+    final resBody = await response.stream.bytesToString();
+    final data = jsonDecode(resBody);
 
     if (data["error"] == false) {
       _snack("Leave applied successfully", true);
@@ -278,13 +263,15 @@ class _LeaveFormState extends State<LeaveForm> {
         toDate = null;
         leaveType = null;
         reason = null;
+        attachment = null;
       });
     } else {
       _snack(data["error_msg"] ?? "Failed", false);
     }
-
-    setState(() => isLoading = false);
   }
+
+  String _formatDate(DateTime d) =>
+      "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
   void _snack(String msg, bool success) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -295,7 +282,6 @@ class _LeaveFormState extends State<LeaveForm> {
     );
   }
 
-  /// ================= UI (UNCHANGED) =================
   @override
   Widget build(BuildContext context) {
     return Form(
@@ -315,6 +301,7 @@ class _LeaveFormState extends State<LeaveForm> {
           _datePicker('From Date', fromDate, true),
           _datePicker('To Date', toDate, false),
           _reasonBox(),
+          _attachmentBox(),
           const SizedBox(height: 80),
           Center(
             child: SizedBox(
@@ -345,12 +332,13 @@ class _LeaveFormState extends State<LeaveForm> {
   }
 
   Widget _title(String t) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 8),
-    child: Text(
-      t,
-      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
-    ),
-  );
+        padding: const EdgeInsets.only(top: 20, bottom: 8),
+        child: Text(
+          t,
+          style:
+              GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+        ),
+      );
 
   Widget _datePicker(String label, DateTime? date, bool isFrom) {
     return Column(
@@ -400,6 +388,38 @@ class _LeaveFormState extends State<LeaveForm> {
           validator: (v) => v!.isEmpty ? 'Required' : null,
           onChanged: (v) => reason = v,
           decoration: const InputDecoration(hintText: 'Reason'),
+        ),
+      ],
+    );
+  }
+
+  Widget _attachmentBox() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _title("Attachments"),
+        InkWell(
+          onTap: _pickAttachment,
+          child: Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.add, size: 40, color: Colors.grey),
+                const SizedBox(height: 8),
+                Text(
+                  attachment == null
+                      ? "Add Attachments"
+                      : attachment!.path.split('/').last,
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );

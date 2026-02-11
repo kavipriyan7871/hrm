@@ -94,6 +94,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
           "lt": lat,
           "ln": lng,
           "type": "2051",
+          "uid": uid.toString(),
           "id": uid.toString(),
         },
       );
@@ -104,10 +105,15 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
         final data = jsonDecode(response.body);
         if (data['error'] == false) {
           List<dynamic> apiList = [];
-          if (data['data'] != null && data['data'] is List) {
+
+          // Check for 'leave_summary' at root level (as per User JSON)
+          if (data['leave_summary'] != null && data['leave_summary'] is List) {
+            apiList = data['leave_summary'];
+          } else if (data['data'] != null && data['data'] is List) {
             apiList = data['data'];
-          } else if (data['data']['leave_summary'] != null &&
-              data['data']['leave_summary'] is List) {
+          } else if (data['data'] != null &&
+              data['data'] is Map &&
+              data['data']['leave_summary'] != null) {
             apiList = data['data']['leave_summary'];
           }
 
@@ -118,13 +124,24 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
 
               // Find matching item in API list
               var apiItem = apiList.firstWhere((api) {
-                String apiType = (api['leave_type_name'] ?? api['type'] ?? "")
-                    .toString()
-                    .toLowerCase();
+                String apiType =
+                    (api['leave_type_name'] ??
+                            api['leave_type'] ??
+                            api['type'] ??
+                            "")
+                        .toString()
+                        .toLowerCase();
                 // Loose matching
                 if (staticType == "earned") {
                   return apiType.contains("privilege") ||
                       apiType.contains("earned");
+                }
+                if (staticType == "casual") {
+                  return apiType.contains("casual");
+                }
+                if (staticType == "sick") {
+                  return apiType.contains("medical") ||
+                      apiType.contains("sick");
                 }
                 return apiType.contains(staticType);
               }, orElse: () => null);
@@ -132,22 +149,25 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
               if (apiItem != null) {
                 int taken =
                     int.tryParse(
-                      apiItem['leave_taken']?.toString() ??
+                      apiItem['leaves_taken_this_year']
+                              ?.toString() ?? // User JSON key
+                          apiItem['leave_taken']?.toString() ??
                           apiItem['taken']?.toString() ??
                           "0",
                     ) ??
                     0;
                 int total =
                     int.tryParse(
-                      apiItem['total_allowed']?.toString() ??
+                      apiItem['max_days_per_year']
+                              ?.toString() ?? // User JSON key
+                          apiItem['total_allowed']?.toString() ??
                           apiItem['total']?.toString() ??
                           "12",
                     ) ??
                     12; // Default to 12 if missing or 0 might be better
 
                 staticItem['taken'] = taken;
-                staticItem['total'] =
-                    total; // If API says 0, should we update? Assuming yes.
+                staticItem['total'] = total;
                 staticItem['balance'] = "${total - taken}/$total";
               }
             }
@@ -166,6 +186,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final uid = prefs.getInt('uid') ?? 1;
+      final empCode = prefs.getString('employee_code') ?? ""; // GET CODE
       final lat = prefs.getDouble('lat')?.toString() ?? "145";
       final lng = prefs.getDouble('lng')?.toString() ?? "145";
 
@@ -177,6 +198,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
           "lt": lat,
           "ln": lng,
           "type": "2052",
+          "uid": uid.toString(),
           "id": uid.toString(),
         },
       );
@@ -185,13 +207,28 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        List<dynamic> fetchedList = [];
+
         if (data is List) {
-          setState(() => historyData = data);
+          fetchedList = data;
+        } else if (data['leave_applications'] != null &&
+            data['leave_applications'] is List) {
+          fetchedList = data['leave_applications'];
         } else if (data["data"] != null && data["data"] is List) {
-          setState(() => historyData = data["data"]);
+          fetchedList = data["data"];
         } else if (data['error'] == false && data['data'] != null) {
-          setState(() => historyData = data['data']);
+          fetchedList = data['data'];
         }
+
+        // FILTER BY EMPLOYEE CODE
+        if (empCode.isNotEmpty) {
+          fetchedList = fetchedList.where((item) {
+            final itemCode = item['employee_uid']?.toString() ?? "";
+            return itemCode == empCode;
+          }).toList();
+        }
+
+        setState(() => historyData = fetchedList);
       }
     } catch (e) {
       debugPrint("Error fetching leave history: $e");
@@ -445,10 +482,15 @@ class LeaveHistoryList extends StatelessWidget {
       itemCount: history.length,
       itemBuilder: (context, index) {
         final item = history[index];
-        // Parse date and status safely
-        final date = item["date"] ?? item["f_date"] ?? "-";
+        // Parse date range
+        String dateRange = item["date"] ?? item["f_date"] ?? "-";
+        if (item["leave_start_date"] != null &&
+            item["leave_end_date"] != null) {
+          dateRange =
+              "${item["leave_start_date"]} To ${item["leave_end_date"]}";
+        }
 
-        // Handle potentially missing leave_type/reason
+        // Handle leave_type
         String type = "Leave";
         if (item["leave_type"] != null) {
           type = item["leave_type"];
@@ -510,9 +552,8 @@ class LeaveHistoryList extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      date,
+                      type, // Main Title: Leave Type
                       style: GoogleFonts.poppins(
-                        // Bold Date
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -520,7 +561,7 @@ class LeaveHistoryList extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      type,
+                      dateRange, // Subtitle: Date Range
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: Colors.grey.shade600,

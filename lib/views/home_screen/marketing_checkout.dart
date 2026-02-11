@@ -25,7 +25,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _remarksController = TextEditingController();
 
   String? _selectedPurpose;
-  File? _attachment;
+  File? _attachments;
   bool _isLoading = false;
 
   bool _isLocationLoading = false;
@@ -40,6 +40,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     _fetchLocation();
     _loadEmployeeDetails(); // Fetch employee details on init
+    final now = DateTime.now();
+    _dateController.text =
+        "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}";
   }
 
   // Fetch Employee Details similar to Leave Application
@@ -59,6 +62,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // If not found, fetch from API
     final loginUid = (prefs.getInt('uid') ?? 0).toString();
+
+    // If we have a loginUid, trust it as the employee_table_id immediately
+    if (loginUid != "0") {
+      await prefs.setString('employee_table_id', loginUid);
+      setState(() {
+        employeeTableId = loginUid;
+        _isEmpLoading = false;
+      });
+      // Continue to fetch details to update name/photo etc, but don't overwrite ID
+    }
+
     try {
       final res = await EmployeeApi.getEmployeeDetails(
         uid: loginUid,
@@ -72,33 +86,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // Handle flat structure or nested "data"
         final data = res["data"] ?? res;
 
-        // Try 'id' first, then 'employee_code'
-        var empId = data["id"]?.toString();
-        if (empId == null || empId == "null" || empId.isEmpty) {
-          empId = data["employee_code"]?.toString();
-        }
+        // Only update auxiliary details
+        setState(() {
+          employeeName = data["name"]?.toString();
+          employeeCode = data["employee_code"]?.toString();
+          employeeProfilePhoto =
+              data["photo"]?.toString() ?? data["profile_image"]?.toString();
+        });
 
-        if (empId != null && empId != "null" && empId.isNotEmpty) {
-          await prefs.setString('employee_table_id', empId);
-          setState(() {
-            employeeTableId = empId;
-            employeeName = data["name"]?.toString();
-            employeeCode = data["employee_code"]?.toString();
-            employeeProfilePhoto =
-                data["photo"]?.toString() ?? data["profile_image"]?.toString();
-          });
-
-          if (employeeName != null)
-            await prefs.setString('name', employeeName!);
-          if (employeeCode != null)
-            await prefs.setString('employee_code', employeeCode!);
-          if (employeeProfilePhoto != null)
-            await prefs.setString('profile_photo', employeeProfilePhoto!);
-
-          debugPrint("Employee ID fetched: $empId");
-        } else {
-          debugPrint("CRITICAL: Employee ID missing in response: $res");
-        }
+        if (employeeName != null) await prefs.setString('name', employeeName!);
+        if (employeeCode != null)
+          await prefs.setString('employee_code', employeeCode!);
+        if (employeeProfilePhoto != null)
+          await prefs.setString('profile_photo', employeeProfilePhoto!);
       }
     } catch (e) {
       debugPrint("Employee fetch error => $e");
@@ -173,7 +173,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() {
-        _attachment = File(pickedFile.path);
+        _attachments = File(pickedFile.path);
       });
     }
   }
@@ -250,14 +250,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'location': _locationController.text,
       });
 
-      if (_attachment != null) {
+      if (_attachments != null) {
         request.files.add(
-          await http.MultipartFile.fromPath('attachment', _attachment!.path),
+          await http.MultipartFile.fromPath('attachments', _attachments!.path),
         );
       }
 
       print("Checkout Request Fields: ${request.fields}");
-      if (_attachment != null) print("Attachment: ${_attachment!.path}");
+      if (_attachments != null) print("Attachment: ${_attachments!.path}");
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
@@ -380,7 +380,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               controller: _dateController,
               isTablet: isTablet,
               prefixIcon: Icons.calendar_today_outlined,
-              isDateField: true,
+              isDateField: false,
+              readOnly: true,
             ),
 
             SizedBox(height: isTablet ? 20 : 16),
@@ -474,10 +475,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: _attachment != null
+                      child: _attachments != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: Image.file(_attachment!, fit: BoxFit.fill),
+                              child: Image.file(
+                                _attachments!,
+                                fit: BoxFit.fill,
+                              ),
                             )
                           : Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -548,6 +552,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     required bool isTablet,
     IconData? prefixIcon,
     bool isDateField = false,
+    bool readOnly = false,
     int maxLines = 1,
     Widget? suffixFunctions,
   }) {
@@ -566,7 +571,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         TextField(
           controller: controller,
           maxLines: maxLines,
-          readOnly: isDateField,
+          readOnly: isDateField || readOnly,
           onTap: isDateField ? () => _selectDate(context) : null,
           decoration: InputDecoration(
             hintText: hint,

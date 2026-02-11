@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import '../../models/employee_api.dart';
 import 'weekly_history.dart';
 import 'check_in.dart';
 import 'check_out.dart';
@@ -15,6 +20,21 @@ class AttendanceScreen extends StatefulWidget {
   AttendanceScreenState createState() => AttendanceScreenState();
 }
 
+// Data model for break entries
+class BreakEntry {
+  final String purpose;
+  final DateTime breakInTime;
+  final DateTime? breakOutTime;
+  final Duration duration;
+
+  BreakEntry({
+    required this.purpose,
+    required this.breakInTime,
+    this.breakOutTime,
+    required this.duration,
+  });
+}
+
 class AttendanceScreenState extends State<AttendanceScreen> {
   bool breakSwitch = false;
   int bottomNavIndex = 1;
@@ -22,25 +42,205 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   bool isCheckedIn = false;
   Timer? breakTimer;
   Duration breakDuration = Duration.zero;
+  Duration totalBreakDuration = Duration.zero;
   bool isLoading = false;
   int uid = 4; // User ID
+  String? serverUidString; // To store the original value from server
   String userName = "User";
   String breakPurpose = "Tea"; // Default/Sample purpose
   final TextEditingController purposeController = TextEditingController();
+  List<BreakEntry> breakHistory = [];
+  DateTime? currentBreakInTime;
+
+  // API Integration fields
+  String cid = "21472147"; // Company ID
+  String? employeeCode;
+  String? employeeName;
+  String? deviceId;
+  Position? currentPosition;
+  int? currentBreakId; // Store break_id from API response
 
   @override
   void initState() {
     super.initState();
     _loadUid();
+    _loadEmployeeData();
+    _getDeviceId();
   }
 
   Future<void> _loadUid() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       uid = prefs.getInt('uid') ?? 4;
+      cid = prefs.getString('cid') ?? "21472147";
+      serverUidString = prefs.getString('server_uid');
       isCheckedIn = prefs.getBool('isCheckedIn') ?? false;
       userName = prefs.getString('name') ?? "User";
+      employeeName = prefs.getString('name');
+      employeeCode = prefs.getString('employee_code');
     });
+  }
+
+  Future<void> _loadEmployeeData() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. Get identifiers from SharedPreferences
+    final storedUid = prefs.getInt('uid') ?? 0;
+    final storedCid = prefs.getString('cid') ?? "21472147";
+    final storedCode = prefs.getString('employee_code');
+    final storedName = prefs.getString('name');
+
+    setState(() {
+      uid = storedUid;
+      cid = storedCid;
+      employeeCode = storedCode;
+      employeeName = storedName ?? userName;
+    });
+
+    debugPrint(
+      "Initial Load: uid=$uid, cid=$cid, code=$employeeCode, name=$employeeName",
+    );
+
+    // 2. Fetch full details from server to sync state
+    try {
+      final res = await EmployeeApi.getEmployeeDetails(
+        uid: uid.toString(),
+        cid: cid,
+        deviceId: deviceId ?? "123456",
+        lat: prefs.getDouble('lat')?.toString() ?? "123",
+        lng: prefs.getDouble('lng')?.toString() ?? "123",
+      );
+
+      if (res["error"] == false) {
+        debugPrint("FULL SYNC RESPONSE: ${jsonEncode(res)}");
+        final data = res["data"] ?? res;
+
+        // Multi-Identifier Discovery
+        String? foundId = data["id"]?.toString(); // Numeric DB ID
+        String? foundUid = data["uid"]?.toString(); // Potential String UID/Code
+
+        final String? serverCid =
+            data["cid"]?.toString() ?? data["cus_id"]?.toString();
+        final String? serverName = data["name"]?.toString();
+
+        debugPrint(
+          "IDENTIFIED => Record ID: $foundId, Server UID: $foundUid, CID: $serverCid",
+        );
+
+        setState(() {
+          if (foundId != null && foundId != "null" && foundId.isNotEmpty) {
+            uid = int.tryParse(foundId) ?? uid;
+          }
+          if (foundUid != null && foundUid != "null") {
+            serverUidString = foundUid;
+          }
+          if (serverCid != null &&
+              serverCid != "null" &&
+              serverCid.isNotEmpty) {
+            cid = serverCid;
+          }
+          if (serverName != null) {
+            employeeName = serverName;
+            userName = serverName;
+          }
+          if (data["employee_code"] != null)
+            employeeCode = data["employee_code"].toString();
+        });
+
+        // Persist synced identifiers
+        await prefs.setInt('uid', uid);
+        await prefs.setString('cid', cid);
+        if (serverUidString != null)
+          await prefs.setString('server_uid', serverUidString!);
+        if (foundId != null)
+          await prefs.setString('employee_table_id', foundId);
+        if (employeeName != null) await prefs.setString('name', employeeName!);
+        if (employeeCode != null)
+          await prefs.setString('employee_code', employeeCode!);
+      } else {
+        debugPrint("DETAILS SYNC FAILED => ${res["error_msg"]}");
+      }
+    } catch (e) {
+      debugPrint("Error in _loadEmployeeData sync: $e");
+    }
+  }
+
+  Future<void> _getDeviceId() async {
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        deviceId = androidInfo.id;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        deviceId = iosInfo.identifierForVendor;
+      }
+      debugPrint("Device ID: $deviceId");
+    } catch (e) {
+      debugPrint("Error getting device ID: $e");
+      deviceId = "unknown";
+    }
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location services are disabled'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return null;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Location permission denied'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return null;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission permanently denied'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return null;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      return position;
+    } catch (e) {
+      debugPrint("Location Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error getting location'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    }
   }
 
   @override
@@ -56,23 +256,102 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       isLoading = true;
     });
 
-    // API REMOVED: Simulation success
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      // Get current location
+      currentPosition = await _getCurrentLocation();
+      if (currentPosition == null) {
+        setState(() => isLoading = false);
+        return;
+      }
 
-    setState(() {
-      breakSwitch = true;
-      isLoading = false;
-    });
-    startBreakTimer();
+      // Make API call using identified parameters from login/sync flow
+      final body = {
+        "type": "2055",
+        "cid": cid,
+        "uid": serverUidString ?? uid.toString(),
+        "id": uid.toString(),
+        "name": employeeName ?? userName,
+        "device_id": deviceId ?? "123456",
+        "lt": currentPosition!.latitude.toString(),
+        "ln": currentPosition!.longitude.toString(),
+        "reason": breakPurpose,
+      };
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Break started successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
+      debugPrint("BREAK IN POST REQUEST => $body");
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: body,
       );
+
+      debugPrint("BREAK IN RAW RESPONSE => ${response.body}");
+      final responseData = jsonDecode(response.body);
+
+      if (responseData["error"] == false || responseData["error"] == "false") {
+        debugPrint("BREAK IN SUCCESS! Data: ${responseData["data"]}");
+      } else {
+        debugPrint("BREAK IN FAILED! Message: ${responseData["error_msg"]}");
+      }
+      final bool isSuccess =
+          responseData["error"] == false || responseData["error"] == "false";
+
+      if (isSuccess && responseData["data"] != null) {
+        final data = responseData["data"];
+
+        // Note: Break API uses 'employee_name' as per user info
+        if (data["employee_name"] != null) {
+          employeeName = data["employee_name"].toString();
+        }
+        if (data["employee_code"] != null) {
+          employeeCode = data["employee_code"].toString();
+        }
+
+        currentBreakId =
+            int.tryParse((data["break_id"] ?? "").toString()) ?? currentBreakId;
+
+        setState(() {
+          breakSwitch = true;
+          isLoading = false;
+          currentBreakInTime = DateTime.now();
+          breakDuration = Duration.zero;
+        });
+        startBreakTimer();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                responseData["error_msg"] ?? 'Break started successfully',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() => isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                responseData["error_msg"] ?? 'Failed to start break',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("BREAK IN ERROR => $e");
+      setState(() => isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Server error occurred'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -82,24 +361,124 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       isLoading = true;
     });
 
-    // API REMOVED: Simulation success
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      // Get current location
+      currentPosition = await _getCurrentLocation();
+      if (currentPosition == null) {
+        setState(() => isLoading = false);
+        return;
+      }
 
-    setState(() {
-      breakSwitch = false;
-      isLoading = false;
-      breakPurpose = "Tea"; // Reset for next time
-    });
-    stopBreakTimer();
+      // Make API call using identified parameters from login/sync flow
+      final body = {
+        "type": "2056",
+        "cid": cid,
+        "uid": serverUidString ?? uid.toString(),
+        "id": uid.toString(),
+        "name": employeeName ?? userName,
+        "device_id": deviceId ?? "123456",
+        "lt": currentPosition!.latitude.toString(),
+        "ln": currentPosition!.longitude.toString(),
+      };
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Break ended successfully'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
+      debugPrint("BREAK OUT POST REQUEST => $body");
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: body,
       );
+
+      debugPrint("BREAK OUT RESPONSE => ${response.body}");
+      final responseData = jsonDecode(response.body);
+      final bool isSuccess =
+          responseData["error"] == false || responseData["error"] == "false";
+
+      if (isSuccess && responseData["data"] != null) {
+        final data = responseData["data"];
+
+        // Update employee name if provided (Break Out also uses employee_name)
+        if (data["employee_name"] != null) {
+          employeeName = data["employee_name"].toString();
+        }
+        if (data["employee_code"] != null) {
+          employeeCode = data["employee_code"].toString();
+        }
+
+        // Parse break times from API response
+        DateTime? breakInTime = currentBreakInTime;
+        DateTime? breakOutTime = DateTime.now();
+        Duration duration = breakDuration;
+
+        // Try to parse duration from API response if available
+        if (data["total_break_duration"] != null) {
+          try {
+            final durationStr = data["total_break_duration"] as String;
+            final parts = durationStr.split(':');
+            if (parts.length >= 2) {
+              final hours = int.tryParse(parts[0]) ?? 0;
+              final minutes = int.tryParse(parts[1]) ?? 0;
+              duration = Duration(hours: hours, minutes: minutes);
+            }
+          } catch (e) {
+            debugPrint("Error parsing duration: $e");
+          }
+        }
+
+        // Record the break entry with API data
+        if (breakInTime != null) {
+          breakHistory.add(
+            BreakEntry(
+              purpose: breakPurpose,
+              breakInTime: breakInTime,
+              breakOutTime: breakOutTime,
+              duration: duration,
+            ),
+          );
+          totalBreakDuration += duration;
+        }
+
+        setState(() {
+          breakSwitch = false;
+          isLoading = false;
+          breakPurpose = "Tea";
+          currentBreakInTime = null;
+          currentBreakId = null;
+        });
+        stopBreakTimer();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                responseData["error_msg"] ?? 'Break ended successfully',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() => isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(responseData["error_msg"] ?? 'Failed to end break'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("BREAK OUT ERROR => $e");
+      setState(() => isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Server error occurred'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -259,6 +638,360 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
+  Future<void> _showBreakReportDialog() async {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        final w = MediaQuery.of(context).size.width;
+        final h = MediaQuery.of(context).size.height;
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            constraints: BoxConstraints(maxHeight: h * 0.7, maxWidth: w * 0.9),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE6F6F4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Image.asset(
+                          "assets/cup.png",
+                          width: 32,
+                          height: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              "Break Report",
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              "View all your breaks taken today",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Summary Cards
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE6F6F4),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF00A79D).withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    "assets/cup.png",
+                                    width: 20,
+                                    height: 20,
+                                    color: const Color(0xFF00A79D),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    "Total Breaks",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                "${breakHistory.length}",
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00A79D),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFFF9800).withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(
+                                    Icons.access_time,
+                                    size: 20,
+                                    color: Color(0xFFFF9800),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    "Total Time",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _formatDurationHoursMinutes(totalBreakDuration),
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFFF9800),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Break History Section
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Break History",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Break History List
+                Flexible(
+                  child: breakHistory.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(40),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                "assets/cup.png",
+                                width: 60,
+                                height: 60,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                "No breaks taken yet",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                "Your break history will appear here",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: breakHistory.length,
+                          itemBuilder: (context, index) {
+                            final entry = breakHistory[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE6F6F4),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Image.asset(
+                                      "assets/cup.png",
+                                      width: 20,
+                                      height: 20,
+                                      color: const Color(0xFF00A79D),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          entry.purpose,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.login,
+                                              size: 14,
+                                              color: Colors.green,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              _formatTime(entry.breakInTime),
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.black54,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            const Icon(
+                                              Icons.logout,
+                                              size: 14,
+                                              color: Colors.red,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              entry.breakOutTime != null
+                                                  ? _formatTime(
+                                                      entry.breakOutTime!,
+                                                    )
+                                                  : "--:--",
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.black54,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFF3E0),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _formatDurationHoursMinutes(
+                                        entry.duration,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFFFF9800),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return "$hour:$minute";
+  }
+
+  String _formatDurationHoursMinutes(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    return "${hours}h ${minutes}m";
+  }
+
   BoxDecoration cardDecoration() {
     return BoxDecoration(
       color: const Color(0xffEFEFEF),
@@ -391,35 +1124,45 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget breakReportCard(double w, double h) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: h * 0.018),
-      decoration: BoxDecoration(
-        color: const Color(0xffF1F1F1),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: Color(0xffE6F6F4),
-                  shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: () => _showBreakReportDialog(),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: w * 0.04,
+          vertical: h * 0.018,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xffF1F1F1),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xffE6F6F4),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Image.asset("assets/cup.png", width: 22, height: 22),
                 ),
-                child: Image.asset("assets/cup.png", width: 22, height: 22),
-              ),
-              SizedBox(width: w * 0.03),
-              const Text(
-                "Break Report",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          const Icon(Icons.trending_up_outlined, size: 22, color: Colors.black),
-        ],
+                SizedBox(width: w * 0.03),
+                const Text(
+                  "Break Report",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const Icon(
+              Icons.trending_up_outlined,
+              size: 22,
+              color: Colors.black,
+            ),
+          ],
+        ),
       ),
     );
   }

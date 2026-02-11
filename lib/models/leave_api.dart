@@ -7,42 +7,19 @@ class LeaveService {
       "https://erpsmart.in/total/api/m_api/";
 
   /// ===============================
-  /// FETCH EMPLOYEE TABLE ID
+  /// GET EMPLOYEE TABLE ID (FIXED)
   /// ===============================
   static Future<String?> getEmployeeTableId() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // already stored
-    final storedId = prefs.getString("employee_table_id");
-    if (storedId != null && storedId.isNotEmpty) {
-      return storedId;
+    // 🔥 ONLY SOURCE OF TRUTH
+    final empId = prefs.getString("employee_table_id");
+
+    if (empId != null && empId.isNotEmpty) {
+      return empId;
     }
 
-    final uid = prefs.getInt("uid")?.toString();
-    if (uid == null) return null;
-
-    final res = await http.post(
-      Uri.parse(baseUrl),
-      body: {
-        "type": "2048",
-        "cid": "21472147",
-        "uid": uid,
-        "device_id": "123456",
-        "lt": "123",
-        "ln": "123",
-      },
-    );
-
-    final data = jsonDecode(res.body);
-
-    if (data["error"] == false) {
-      final empId = data["data"]?["id"]?.toString();
-
-      if (empId != null && empId.isNotEmpty) {
-        await prefs.setString("employee_table_id", empId);
-        return empId;
-      }
-    }
+    // ❌ NO API CALL HERE
     return null;
   }
 
@@ -83,7 +60,7 @@ class LeaveService {
   }) async {
     final empId = await getEmployeeTableId();
 
-    if (empId == null) {
+    if (empId == null || empId.isEmpty) {
       return {
         "error": true,
         "error_msg": "Employee not found. Please re-login."
@@ -94,7 +71,7 @@ class LeaveService {
       Uri.parse(baseUrl),
       body: {
         "type": "2043",
-        "uid": empId, // ✅ CORRECT ID
+        "uid": empId, // ✅ ALWAYS CORRECT
         "leave_type": leaveType,
         "leave_start_date": fromDate,
         "leave_end_date": toDate,

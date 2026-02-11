@@ -22,6 +22,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
   String address = "";
   String mobile = "";
   String profilePhoto = "";
+  String? employeeTableId;
 
   @override
   void initState() {
