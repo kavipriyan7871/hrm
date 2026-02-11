@@ -9,6 +9,8 @@ import 'leave_management.dart';
 import 'marketing_checkin.dart';
 import 'notification.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -24,6 +26,200 @@ class _DashboardState extends State<Dashboard> {
   void initState() {
     super.initState();
     _loadEmployeeName();
+    _fetchLeaveSummary();
+  }
+
+  // Helper structure to hold leave balance data
+  List<Map<String, dynamic>> leaveBalanceData = [
+    {"type": "Casual", "taken": 0, "total": 12, "balance": "12/12"},
+    {"type": "Sick", "taken": 0, "total": 12, "balance": "12/12"},
+    {"type": "Earned", "taken": 0, "total": 12, "balance": "12/12"},
+  ];
+
+  Future<void> _fetchLeaveSummary() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = prefs.getInt('uid') ?? 1;
+      final lat = prefs.getDouble('lat')?.toString() ?? "145";
+      final lng = prefs.getDouble('lng')?.toString() ?? "145";
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: {
+          "cid": "21472147",
+          "device_id": "123456",
+          "lt": lat,
+          "ln": lng,
+          "type": "2051",
+          "uid": uid.toString(),
+          "id": uid.toString(),
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['error'] == false) {
+          List<dynamic> apiList = [];
+          if (data['leave_summary'] != null && data['leave_summary'] is List) {
+            apiList = data['leave_summary'];
+          } else if (data['data'] != null && data['data'] is List) {
+            apiList = data['data'];
+          }
+
+          if (mounted) {
+            setState(() {
+              for (var staticItem in leaveBalanceData) {
+                String staticType = staticItem['type'].toString().toLowerCase();
+                var apiItem = apiList.firstWhere((api) {
+                  String apiType =
+                      (api['leave_type_name'] ??
+                              api['leave_type'] ??
+                              api['type'] ??
+                              "")
+                          .toString()
+                          .toLowerCase();
+                  if (staticType == "earned")
+                    return apiType.contains("privilege") ||
+                        apiType.contains("earned");
+                  if (staticType == "casual") return apiType.contains("casual");
+                  if (staticType == "sick")
+                    return apiType.contains("medical") ||
+                        apiType.contains("sick");
+                  return apiType.contains(staticType);
+                }, orElse: () => null);
+
+                if (apiItem != null) {
+                  int taken =
+                      int.tryParse(
+                        apiItem['leaves_taken_this_year']?.toString() ??
+                            apiItem['leave_taken']?.toString() ??
+                            "0",
+                      ) ??
+                      0;
+                  int total =
+                      int.tryParse(
+                        apiItem['max_days_per_year']?.toString() ??
+                            apiItem['total_allowed']?.toString() ??
+                            "12",
+                      ) ??
+                      12;
+                  staticItem['total'] = total;
+                  staticItem['taken'] =
+                      taken; // Temporary update, will be refined by history
+                  staticItem['balance'] = "${total - taken}/$total";
+                }
+              }
+            });
+          }
+        }
+      }
+      // Fetch history for accurate 'taken' count
+      await _fetchLeaveHistory();
+    } catch (e) {
+      debugPrint("Error fetching leave summary: $e");
+    }
+  }
+
+  Future<void> _fetchLeaveHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = prefs.getInt('uid') ?? 1;
+      final empCode = prefs.getString('employee_code') ?? "";
+      final lat = prefs.getDouble('lat')?.toString() ?? "145";
+      final lng = prefs.getDouble('lng')?.toString() ?? "145";
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: {
+          "cid": "21472147",
+          "device_id": "123456",
+          "lt": lat,
+          "ln": lng,
+          "type": "2052",
+          "uid": uid.toString(),
+          "id": uid.toString(),
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        List<dynamic> fetchedList = [];
+
+        if (data is List) {
+          fetchedList = data;
+        } else if (data['leave_applications'] != null &&
+            data['leave_applications'] is List) {
+          fetchedList = data['leave_applications'];
+        } else if (data['data'] != null && data['data'] is List) {
+          fetchedList = data['data'];
+        }
+
+        if (empCode.isNotEmpty) {
+          fetchedList = fetchedList
+              .where(
+                (item) => (item['employee_uid']?.toString() ?? "") == empCode,
+              )
+              .toList();
+        }
+
+        // Calculate Taken from History
+        if (mounted) {
+          setState(() {
+            // Reset taken
+            for (var b in leaveBalanceData) {
+              b['taken'] = 0;
+            }
+
+            for (var h in fetchedList) {
+              String status = (h['status'] ?? "0").toString();
+              if (status == "2" || status.toLowerCase().contains("reject"))
+                continue;
+
+              num days = 0;
+              if (h['no_of_days'] != null)
+                days = num.tryParse(h['no_of_days'].toString()) ?? 0;
+              else if (h['total_days'] != null)
+                days = num.tryParse(h['total_days'].toString()) ?? 0;
+              else if (h['days'] != null)
+                days = num.tryParse(h['days'].toString()) ?? 0;
+              else
+                days = 1;
+
+              String type = (h['leave_type'] ?? h['reason'] ?? "")
+                  .toString()
+                  .toLowerCase();
+
+              for (var b in leaveBalanceData) {
+                String bType = b['type'].toString().toLowerCase();
+                bool match = false;
+                if (bType == "earned")
+                  match = type.contains("privilege") || type.contains("earned");
+                else if (bType == "casual")
+                  match = type.contains("casual");
+                else if (bType == "sick")
+                  match = type.contains("medical") || type.contains("sick");
+                else
+                  match = type.contains(bType);
+
+                if (match) {
+                  b['taken'] = (b['taken'] as num) + days;
+                  break;
+                }
+              }
+            }
+
+            // Update Balance Strings
+            for (var b in leaveBalanceData) {
+              num total = b['total'] ?? 12;
+              num taken = b['taken'];
+              b['balance'] = "${total - taken}/$total";
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching leave history: $e");
+    }
   }
 
   Future<void> _loadEmployeeName() async {
@@ -531,29 +727,32 @@ class _DashboardState extends State<Dashboard> {
         ],
       ),
       child: Column(
-        children: [
-          Row(
-            children: [
-              Image.asset("assets/casual_leave.png", height: 60, width: 60),
-              const SizedBox(width: 12),
-              Text(
-                "Casual Leave:\nTaken: 0 Day\nBalance: 12 Days",
-                style: GoogleFonts.poppins(fontSize: 13),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Image.asset("assets/casual_leave.png", height: 60, width: 60),
-              const SizedBox(width: 12),
-              Text(
-                "Medical Leave:\nTaken: 0 Day\nBalance: 12 Days",
-                style: GoogleFonts.poppins(fontSize: 13),
-              ),
-            ],
-          ),
-        ],
+        children: leaveBalanceData
+            .where((item) => item['type'] == 'Casual' || item['type'] == 'Sick')
+            .map((item) {
+              String displayType = item['type'] == "Sick"
+                  ? "Medical Leave"
+                  : "${item['type']} Leave";
+              String asset =
+                  "assets/casual_leave.png"; // Default to casual icon
+              // If you have a medical icon, use it here, e.g.
+              // if (item['type'] == "Sick") asset = "assets/medical_leave.png";
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 20.0),
+                child: Row(
+                  children: [
+                    Image.asset(asset, height: 60, width: 60),
+                    const SizedBox(width: 12),
+                    Text(
+                      "$displayType:\nTaken: ${item['taken']} Day\nBalance: ${item['total'] - item['taken']} Days",
+                      style: GoogleFonts.poppins(fontSize: 13),
+                    ),
+                  ],
+                ),
+              );
+            })
+            .toList(),
       ),
     );
   }

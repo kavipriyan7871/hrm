@@ -652,7 +652,6 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           child: Container(
             constraints: BoxConstraints(maxHeight: h * 0.7, maxWidth: w * 0.9),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 // Header
                 Padding(
@@ -713,17 +712,17 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE6F6F4),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFF00A79D).withOpacity(0.3),
+                              color: const Color(0xFF00A79D),
                               width: 1,
                             ),
                           ),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Image.asset(
                                     "assets/cup.png",
@@ -732,12 +731,15 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                                     color: const Color(0xFF00A79D),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Text(
-                                    "Total Breaks",
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.black87,
+                                  const Flexible(
+                                    child: Text(
+                                      "Total Breaks",
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -746,9 +748,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                               Text(
                                 "${breakHistory.length}",
                                 style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF00A79D),
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.black,
                                 ),
                               ),
                             ],
@@ -760,30 +762,34 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFF3E0),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFFFF9800).withOpacity(0.3),
+                              color: const Color(0xFF00A79D),
                               width: 1,
                             ),
                           ),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: const [
                                   Icon(
-                                    Icons.access_time,
+                                    Icons
+                                        .access_time_outlined, // Changed to outlined icon
                                     size: 20,
-                                    color: Color(0xFFFF9800),
+                                    color: Color(0xFF00A79D),
                                   ),
                                   SizedBox(width: 8),
-                                  Text(
-                                    "Total Time",
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.black87,
+                                  Flexible(
+                                    child: Text(
+                                      "Total Time",
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -792,9 +798,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                               Text(
                                 _formatDurationHoursMinutes(totalBreakDuration),
                                 style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFFF9800),
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.black,
                                 ),
                               ),
                             ],
@@ -825,7 +831,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 const SizedBox(height: 12),
 
                 // Break History List
-                Flexible(
+                Expanded(
                   child: breakHistory.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(40),
@@ -859,7 +865,6 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                         )
                       : ListView.builder(
-                          shrinkWrap: true,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           itemCount: breakHistory.length,
                           itemBuilder: (context, index) {
@@ -904,6 +909,8 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                                             fontWeight: FontWeight.w600,
                                             color: Colors.black87,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 8),
                                         Row(

@@ -34,7 +34,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   void _updateChartForSelection() {
-    final seed = (selectedReportType ?? 'Attendance') +
+    final seed =
+        (selectedReportType ?? 'Attendance') +
         '|' +
         (selectedMonth ?? 'None') +
         '|' +
@@ -100,10 +101,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         title: Text(
           "Reports",
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-          ),
+          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w500),
         ),
       ),
       body: SafeArea(
@@ -144,14 +142,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       color: Colors.grey.withOpacity(0.15),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
-                    )
+                    ),
                   ],
                 ),
                 child: Column(
                   children: [
                     Container(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: Colors.grey.shade300),
@@ -167,19 +167,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           ),
                         ),
                         icon: const Icon(Icons.keyboard_arrow_down),
-                        decoration:
-                        const InputDecoration.collapsed(hintText: ''),
+                        decoration: const InputDecoration.collapsed(
+                          hintText: '',
+                        ),
                         items: ['Attendance', 'Leave', 'Payroll']
-                            .map((value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(
-                            value,
-                            style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ))
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(
+                                  value,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: _onReportTypeChanged,
                       ),
@@ -188,8 +191,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     const SizedBox(height: 12),
 
                     Container(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: Colors.grey.shade300),
@@ -217,7 +222,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               padding: EdgeInsets.all(6.0),
                               child: Icon(Icons.calendar_month),
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
@@ -245,7 +250,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           ),
                         ),
                       ),
-                    )
+                    ),
                   ],
                 ),
               ),
@@ -270,14 +275,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 crossAxisSpacing: 16,
                 childAspectRatio: 1.4,
                 children: [
-                  _buildStatCard('24', 'Day Worked',
-                      [const Color(0xFFF5F5F5), const Color(0xFFD4D6FF)]),
-                  _buildStatCard('02', 'Leave Taken',
-                      [const Color(0xFFF5F5F5), const Color(0xFFD4FEFF)]),
-                  _buildStatCard('08', 'Total OT Hours',
-                      [const Color(0xFFF5F5F5), const Color(0xFFF4D4FF)]),
-                  _buildStatCard('01', 'LOP',
-                      [const Color(0xFFF5F5F5), const Color(0xFFFFD4D5)]),
+                  _buildStatCard('24', 'Day Worked', [
+                    const Color(0xFFF5F5F5),
+                    const Color(0xFFD4D6FF),
+                  ]),
+                  _buildStatCard('02', 'Leave Taken', [
+                    const Color(0xFFF5F5F5),
+                    const Color(0xFFD4FEFF),
+                  ]),
+                  _buildStatCard('08', 'Total OT Hours', [
+                    const Color(0xFFF5F5F5),
+                    const Color(0xFFF4D4FF),
+                  ]),
+                  _buildStatCard('01', 'LOP', [
+                    const Color(0xFFF5F5F5),
+                    const Color(0xFFFFD4D5),
+                  ]),
                 ],
               ),
 
@@ -320,14 +333,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             alignment: Alignment.center,
                             children: [
                               PieChart(
-                          dataMap: {
-                          "Present": 24,
-                          "Absent": 4,
-                          "On Duty": 5,
-                          "Permission": 4
-                          },
-                                animationDuration: const Duration(milliseconds: 1000),
-                                chartRadius: 360,
+                                dataMap: {
+                                  "Present": 24,
+                                  "Absent": 4,
+                                  "On Duty": 5,
+                                  "Permission": 4,
+                                },
+                                animationDuration: const Duration(
+                                  milliseconds: 1000,
+                                ),
+                                chartRadius: 160,
                                 chartType: ChartType.disc,
                                 ringStrokeWidth: 32,
 
@@ -346,40 +361,45 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   showChartValuesOutside: false,
                                 ),
                               ),
-
                             ],
                           ),
                         ),
 
                         const SizedBox(width: 20),
 
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLegendItem(
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildLegendItem(
                                 "Present",
                                 chartValues['Present']?.toInt().toString() ??
                                     '0',
-                                Colors.green),
-                            const SizedBox(height: 12),
-                            _buildLegendItem(
+                                Colors.green,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildLegendItem(
                                 "Absent",
                                 chartValues['Absent']?.toInt().toString() ??
                                     '0',
-                                Colors.red),
-                            const SizedBox(height: 12),
-                            _buildLegendItem(
+                                Colors.red,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildLegendItem(
                                 "On Duty",
                                 chartValues['On Duty']?.toInt().toString() ??
                                     '0',
-                                Colors.brown),
-                            const SizedBox(height: 12),
-                            _buildLegendItem(
+                                Colors.brown,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildLegendItem(
                                 "Permission",
                                 chartValues['Permission']?.toInt().toString() ??
                                     '0',
-                                Colors.blue),
-                          ],
+                                Colors.blue,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -389,9 +409,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
               const SizedBox(height: 20),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
-                  color:  Colors.lime.shade100,
+                  color: Colors.lime.shade100,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: const Color(0xFF26A69A).withOpacity(0.35),
@@ -438,9 +461,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       icon: const Icon(Icons.picture_as_pdf),
                       label: Text(
                         'Export PDF',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF26A69A),
@@ -456,8 +477,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {},
-                      icon:
-                      const Icon(Icons.share, color: Color(0xFF465583)),
+                      icon: const Icon(Icons.share, color: Color(0xFF465583)),
                       label: Text(
                         'Share',
                         style: GoogleFonts.poppins(
@@ -466,15 +486,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
-                        side:
-                        const BorderSide(color: Color(0xFF465583)),
+                        side: const BorderSide(color: Color(0xFF465583)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
-                  )
+                  ),
                 ],
               ),
 
@@ -515,7 +534,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
-          )
+          ),
         ],
       ),
     );
@@ -527,19 +546,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
         Container(
           width: 16,
           height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 8),
-        Text(
-          "$label: $value",
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Text(
+            "$label: $value",
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-        )
+        ),
       ],
     );
   }
@@ -548,8 +567,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
 class MonthPickerDialog extends StatefulWidget {
   final String? initialMonth;
   final int initialYear;
-  const MonthPickerDialog(
-      {super.key, this.initialMonth, required this.initialYear});
+  const MonthPickerDialog({
+    super.key,
+    this.initialMonth,
+    required this.initialYear,
+  });
 
   @override
   State<MonthPickerDialog> createState() => _MonthPickerDialogState();
@@ -568,7 +590,7 @@ class _MonthPickerDialogState extends State<MonthPickerDialog> {
     'September',
     'October',
     'November',
-    'December'
+    'December',
   ];
 
   late int displayedYear;
@@ -649,7 +671,7 @@ class _MonthPickerDialogState extends State<MonthPickerDialog> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: pickedMonth == m
-                                ?  Color(0xff26A69A)
+                                ? Color(0xff26A69A)
                                 : Colors.transparent,
                             width: 1.2,
                           ),
@@ -688,13 +710,15 @@ class _MonthPickerDialogState extends State<MonthPickerDialog> {
                       onPressed: pickedMonth == null
                           ? null
                           : () {
-                        Navigator.of(context).pop(_MonthSelection(
-                          monthName: pickedMonth!,
-                          year: displayedYear,
-                        ));
-                      },
+                              Navigator.of(context).pop(
+                                _MonthSelection(
+                                  monthName: pickedMonth!,
+                                  year: displayedYear,
+                                ),
+                              );
+                            },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:  Colors.white,
+                        backgroundColor: Colors.white,
                       ),
                       child: Text('Select', style: GoogleFonts.poppins()),
                     ),
