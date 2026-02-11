@@ -174,6 +174,9 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
           });
         }
       }
+
+      // Also fetch history immediately so it's ready
+      await _fetchLeaveHistory();
     } catch (e) {
       debugPrint("Error fetching leave summary: $e");
     } finally {
@@ -211,21 +214,135 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
 
         if (data is List) {
           fetchedList = data;
-        } else if (data['leave_applications'] != null &&
-            data['leave_applications'] is List) {
-          fetchedList = data['leave_applications'];
-        } else if (data["data"] != null && data["data"] is List) {
-          fetchedList = data["data"];
-        } else if (data['error'] == false && data['data'] != null) {
-          fetchedList = data['data'];
-        }
+        } else {
+          // 1. Try to get History List from Map
+          if (data['leave_applications'] != null &&
+              data['leave_applications'] is List) {
+            fetchedList = data['leave_applications'];
+          } else if (data["data"] != null && data["data"] is List) {
+            fetchedList = data["data"];
+          } else if (data['error'] == false && data['data'] != null) {
+            // Fallback if data is in 'data' but maybe not directly a list?
+            // Or if we need to support old structure
+            if (data['data'] is List) fetchedList = data['data'];
+          }
 
+          // 2. Try to get Leave Summary (for the cards)
+          if (data['leave_summary'] != null && data['leave_summary'] is List) {
+            final summaryList = data['leave_summary'];
+            // Update local balance data
+            for (var staticItem in leaveBalanceData) {
+              String staticType = staticItem['type'].toString().toLowerCase();
+              dynamic apiItem = summaryList.firstWhere((api) {
+                String apiType =
+                    (api['leave_type_name'] ??
+                            api['leave_type'] ??
+                            api['type'] ??
+                            "")
+                        .toString()
+                        .toLowerCase();
+                if (staticType == "earned") {
+                  return apiType.contains("privilege") ||
+                      apiType.contains("earned");
+                }
+                if (staticType == "casual") {
+                  return apiType.contains("casual");
+                }
+                if (staticType == "sick") {
+                  return apiType.contains("medical") ||
+                      apiType.contains("sick");
+                }
+                return apiType.contains(staticType);
+              }, orElse: () => null);
+
+              if (apiItem != null) {
+                int taken =
+                    int.tryParse(
+                      apiItem['leaves_taken_this_year']?.toString() ?? "0",
+                    ) ??
+                    0;
+                int total =
+                    int.tryParse(
+                      apiItem['max_days_per_year']?.toString() ?? "12",
+                    ) ??
+                    12;
+                staticItem['taken'] = taken;
+                staticItem['total'] = total;
+                staticItem['balance'] = "${total - taken}/$total";
+              }
+            }
+          }
+        }
         // FILTER BY EMPLOYEE CODE
         if (empCode.isNotEmpty) {
           fetchedList = fetchedList.where((item) {
             final itemCode = item['employee_uid']?.toString() ?? "";
             return itemCode == empCode;
           }).toList();
+        }
+
+        // --- Calculate Taken & Balance from History (Manual Count) ---
+
+        // 1. Reset 'taken' count locally (keep 'total' from API/Static)
+        for (var b in leaveBalanceData) {
+          b['taken'] = 0;
+        }
+
+        // 2. Iterate history and sum up
+        for (var h in fetchedList) {
+          // Skip Rejected
+          String status = (h['status'] ?? "0").toString();
+          if (status == "2" || status.toLowerCase().contains("reject")) {
+            continue;
+          }
+
+          // Get Days
+          num days = 0;
+          if (h['no_of_days'] != null) {
+            days = num.tryParse(h['no_of_days'].toString()) ?? 0;
+          } else if (h['total_days'] != null) {
+            days = num.tryParse(h['total_days'].toString()) ?? 0;
+          } else if (h['days'] != null) {
+            days = num.tryParse(h['days'].toString()) ?? 0;
+          } else {
+            // Unspecified duration: assume 1 day? Or try date parse if safe.
+            // For safety, defaulting to 1 if no field found, or 0?
+            // Often if days is missing it might be 1.
+            days = 1;
+          }
+
+          // Get Type
+          String type = (h['leave_type'] ?? h['reason'] ?? "")
+              .toString()
+              .toLowerCase();
+
+          // Match and Add
+          for (var b in leaveBalanceData) {
+            String bType = b['type'].toString().toLowerCase();
+            bool match = false;
+
+            if (bType == "earned") {
+              match = type.contains("privilege") || type.contains("earned");
+            } else if (bType == "casual") {
+              match = type.contains("casual");
+            } else if (bType == "sick") {
+              match = type.contains("medical") || type.contains("sick");
+            } else {
+              match = type.contains(bType);
+            }
+
+            if (match) {
+              b['taken'] = (b['taken'] as num) + days;
+              break;
+            }
+          }
+        }
+
+        // 3. Update Balance Strings
+        for (var b in leaveBalanceData) {
+          num total = b['total'] ?? 12; // Default if null
+          num taken = b['taken'];
+          b['balance'] = "${total - taken}/$total";
         }
 
         setState(() => historyData = fetchedList);
@@ -307,7 +424,10 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
                       child: GestureDetector(
                         onTap: () {
                           setState(() => selectedTab = 1);
-                          if (historyData.isEmpty) {
+                          // Always fetch history heavily to get summary updates too?
+                          // Or check if valid.
+                          if (historyData.isEmpty || true) {
+                            // Force update for summary sync
                             _fetchLeaveHistory();
                           }
                         },
@@ -343,19 +463,25 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
             selectedTab == 0
                 ? isBalanceLoading
                       ? const Center(child: CircularProgressIndicator())
-                      : LeaveBalanceGrid(leaveData: leaveBalanceData)
+                      : Column(
+                          children: [
+                            LeaveBalanceGrid(leaveData: leaveBalanceData),
+                            const SizedBox(height: 40),
+                            const HolidayListCard(),
+                            const SizedBox(height: 40),
+                            const ApplyLeaveButton(),
+                            const SizedBox(height: 40),
+                          ],
+                        )
                 : isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : LeaveHistoryList(history: historyData),
-
-            if (selectedTab == 0) ...[
-              const SizedBox(height: 40),
-              const HolidayListCard(),
-              const SizedBox(height: 40),
-              const ApplyLeaveButton(),
-              const SizedBox(height: 40),
-            ] else
-              const SizedBox(height: 20),
+                : Column(
+                    children: [
+                      // Show Summary in History Tab
+                      LeaveHistoryList(history: historyData),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
           ],
         ),
       ),

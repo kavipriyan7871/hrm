@@ -94,8 +94,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color:
-                              selectedTab == 0 ? Colors.white : Colors.black,
+                          color: selectedTab == 0 ? Colors.white : Colors.black,
                         ),
                       ),
                     ),
@@ -118,8 +117,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color:
-                              selectedTab == 1 ? Colors.white : Colors.black,
+                          color: selectedTab == 1 ? Colors.white : Colors.black,
                         ),
                       ),
                     ),
@@ -130,7 +128,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
           ),
 
           const SizedBox(height: 30),
-          if (selectedTab == 0) const LeaveForm() else const PermissionForm(),
+          if (selectedTab == 0) const LeaveForm() else PermissionForm(),
         ],
       ),
     );
@@ -195,8 +193,9 @@ class _LeaveFormState extends State<LeaveForm> {
     if (data["error"] == false) {
       setState(() {
         leaveTypes = List<String>.from(
-          data["data"]["leave_types"]
-              .map((e) => e["leave_type_name"].toString()),
+          data["data"]["leave_types"].map(
+            (e) => e["leave_type_name"].toString(),
+          ),
         );
       });
     }
@@ -212,75 +211,130 @@ class _LeaveFormState extends State<LeaveForm> {
   }
 
   Future<void> _applyLeave() async {
-    if (!_formKey.currentState!.validate() ||
-        fromDate == null ||
-        toDate == null) {
-      _snack("Fill all fields", false);
+    if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
       return;
     }
+    _formKey.currentState!.save();
 
-    await _employeeCompleter.future;
-
-    if (employeeTableId == null || employeeTableId!.isEmpty) {
-      _snack("Employee not found. Please login again.", false);
-      return;
-    }
-
-    final request =
-        http.MultipartRequest("POST", Uri.parse(baseUrl));
-
-    request.fields.addAll({
-      "type": "2043",
-      "uid": employeeTableId!, // ✅ CORRECT ID
-      "leave_type": leaveType!,
-      "leave_start_date": _formatDate(fromDate!),
-      "leave_end_date": _formatDate(toDate!),
-      "reason": reason!,
-      "cid": "21472147",
-      "device_id": "123456",
-      "lt": "145",
-      "ln": "145",
-    });
-
-    if (attachment != null) {
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          "attachment",
-          attachment!.path,
-        ),
+    if (fromDate == null || toDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select From Date and To Date')),
       );
+      return;
     }
 
-    final response = await request.send();
-    final resBody = await response.stream.bytesToString();
-    final data = jsonDecode(resBody);
+    if (leaveType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a Leave Type')),
+      );
+      return;
+    }
 
-    if (data["error"] == false) {
-      _snack("Leave applied successfully", true);
-      _formKey.currentState!.reset();
-      setState(() {
-        fromDate = null;
-        toDate = null;
-        leaveType = null;
-        reason = null;
-        attachment = null;
-      });
-    } else {
-      _snack(data["error_msg"] ?? "Failed", false);
+    // Check if reason is actually saved/updated
+    if (reason == null || reason!.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a reason')));
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      if (employeeTableId == null) {
+        // Try fetch again or fail
+        final prefs = await SharedPreferences.getInstance();
+        employeeTableId = prefs.getString("employee_table_id");
+        if (employeeTableId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Employee ID not found. Relogin.')),
+          );
+          setState(() => isLoading = false);
+          return;
+        }
+      }
+
+      var request = http.MultipartRequest("POST", Uri.parse(baseUrl));
+      request.fields['type'] = '2043';
+      request.fields['cid'] = '21472147';
+      request.fields['uid'] = employeeTableId!;
+      request.fields['leave_type'] = leaveType!;
+      request.fields['leave_start_date'] = _formatDate(fromDate!);
+      request.fields['leave_end_date'] = _formatDate(toDate!);
+      request.fields['reason'] = reason!;
+      request.fields['device_id'] = '123456';
+      request.fields['lt'] = "143.23"; // Dummy coords if not available
+      request.fields['ln'] = "123.12";
+
+      if (attachment != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('attachment', attachment!.path),
+        );
+      }
+
+      debugPrint("LEAVE APPLY REQ: ${request.fields}");
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      debugPrint("LEAVE APPLY RES: ${response.body}");
+
+      final data = jsonDecode(response.body);
+
+      if (data["error"] == false || data["error"] == 'false') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Success: Leave Applied Successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Clear Form
+          _formKey.currentState!.reset();
+          setState(() {
+            leaveType = null;
+            fromDate = null;
+            toDate = null;
+            reason = null;
+            attachment = null;
+          });
+
+          // Navigate to Leave Management Screen
+          Future.delayed(const Duration(seconds: 1), () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const LeaveManagementScreen(),
+              ),
+            );
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(data["error_msg"] ?? 'Failed to apply leave'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Leave Apply Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   String _formatDate(DateTime d) =>
       "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
-
-  void _snack(String msg, bool success) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: success ? Colors.green : Colors.red,
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -332,13 +386,12 @@ class _LeaveFormState extends State<LeaveForm> {
   }
 
   Widget _title(String t) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 8),
-        child: Text(
-          t,
-          style:
-              GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 20, bottom: 8),
+    child: Text(
+      t,
+      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+    ),
+  );
 
   Widget _datePicker(String label, DateTime? date, bool isFrom) {
     return Column(

@@ -1178,26 +1178,32 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: Color(0xffE3F2FD),
-                  shape: BoxShape.circle,
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xffE3F2FD),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.access_time,
+                    color: Color(0xff2196F3),
+                    size: 26,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.access_time,
-                  color: Color(0xff2196F3),
-                  size: 26,
+                SizedBox(width: w * 0.03),
+                Flexible(
+                  // Added Flexible
+                  child: const Text(
+                    "Today Work Progress Report",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis, // Added ellipsis
+                  ),
                 ),
-              ),
-              SizedBox(width: w * 0.03),
-              const Text(
-                "Today Work Progress Report",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-            ],
+              ],
+            ),
           ),
           const Icon(
             Icons.trending_up_outlined,
@@ -1309,26 +1315,31 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 24, color: color),
                   ),
-                  child: Icon(icon, size: 24, color: color),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  label,
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 16,
-                    color: color.withOpacity(0.8),
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+                        color: color.withOpacity(0.8),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const Icon(
               Icons.arrow_forward_ios,
@@ -1376,34 +1387,39 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                if (isLoading)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            Expanded(
+              child: Row(
+                children: [
+                  if (isLoading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  else
+                    Image.asset(
+                      "assets/cup.png",
+                      width: 24,
+                      height: 24,
+                      color: Colors.white,
                     ),
-                  )
-                else
-                  Image.asset(
-                    "assets/cup.png",
-                    width: 24,
-                    height: 24,
-                    color: Colors.white,
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      isLoading
+                          ? "Processing..."
+                          : breakSwitch
+                          ? "Break Out (${formatDuration(breakDuration)})"
+                          : "Break In (${formatDuration(breakDuration)})",
+                      style: const TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                const SizedBox(width: 10),
-                Text(
-                  isLoading
-                      ? "Processing..."
-                      : breakSwitch
-                      ? "Break Out (${formatDuration(breakDuration)})"
-                      : "Break In (${formatDuration(breakDuration)})",
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ],
+                ],
+              ),
             ),
             if (!isLoading)
               Switch(
@@ -1504,12 +1520,15 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          isCheckedIn ? "Checked In" : "Not Checked In",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: isCheckedIn ? Colors.green : Colors.grey,
+                        Flexible(
+                          child: Text(
+                            isCheckedIn ? "Checked In" : "Not Checked In",
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: isCheckedIn ? Colors.green : Colors.grey,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

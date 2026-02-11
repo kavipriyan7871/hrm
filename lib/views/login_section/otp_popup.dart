@@ -338,7 +338,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
               "Fetching EmployeeDetails to confirm UID for: $employeeId",
             );
             final empRes = await EmployeeApi.getEmployeeDetails(
-              uid: employeeId!,
+              uid: employeeId,
               cid: "21472147",
               deviceId: "123456",
               lat: lat,

@@ -250,7 +250,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'location': _locationController.text,
       });
 
-      if (_attachments != null) {
+      if (_attachments != null && await _attachments!.exists()) {
         request.files.add(
           await http.MultipartFile.fromPath('attachments', _attachments!.path),
         );

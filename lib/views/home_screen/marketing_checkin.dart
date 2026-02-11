@@ -598,6 +598,32 @@ class _MarketingScreenState extends State<MarketingScreen> {
     );
   }
 
+  String _formatTime12Hour(String time24) {
+    try {
+      if (time24.contains("–")) {
+        // Handle range like "10:00:00 – 11:00:00"
+        final parts = time24.split("–");
+        final start = _formatTime12Hour(parts[0].trim());
+        final end = _formatTime12Hour(parts[1].trim());
+        return "$start – $end";
+      }
+
+      final parts = time24.split(':');
+      if (parts.length < 2) return time24;
+
+      final hour = int.parse(parts[0]);
+      final minute = int.parse(parts[1]);
+
+      final period = hour >= 12 ? 'PM' : 'AM';
+      var hour12 = hour % 12;
+      if (hour12 == 0) hour12 = 12;
+
+      return "$hour12:${minute.toString().padLeft(2, '0')} $period";
+    } catch (e) {
+      return time24;
+    }
+  }
+
   Widget _historyCard(
     BuildContext context, {
     required String company,
@@ -622,7 +648,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
       child: _buildHistoryItem(
         context: context,
         company: company,
-        time: time,
+        time: _formatTime12Hour(time),
         status: status,
         statusColor: statusColor,
       ),
