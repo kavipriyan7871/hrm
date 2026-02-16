@@ -1,15 +1,36 @@
 import 'package:flutter/material.dart';
-import '../home/ticket_raise.dart';
+
 import 'package:intl/intl.dart';
+import '../../models/ticket_api.dart';
+import '../home/ticket_raise.dart';
 
-class ViewTicketRaisingScreen extends StatelessWidget {
-  final List<Map<String, dynamic>> tickets;
+class ViewTicketRaisingScreen extends StatefulWidget {
+  const ViewTicketRaisingScreen({super.key});
 
-  // ✅ SAFE CONSTRUCTOR (NO MORE NoSuchMethodError)
-  const ViewTicketRaisingScreen({
-    super.key,
-    this.tickets = const [], // 👈 DEFAULT VALUE
-  });
+  @override
+  State<ViewTicketRaisingScreen> createState() =>
+      _ViewTicketRaisingScreenState();
+}
+
+class _ViewTicketRaisingScreenState extends State<ViewTicketRaisingScreen> {
+  List<Map<String, dynamic>> tickets = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTickets();
+  }
+
+  Future<void> _fetchTickets() async {
+    final fetchedTickets = await TicketApi.fetchTickets();
+    if (mounted) {
+      setState(() {
+        tickets = fetchedTickets;
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +58,9 @@ class ViewTicketRaisingScreen extends StatelessWidget {
           children: [
             // 🔹 TICKET LIST
             Expanded(
-              child: tickets.isEmpty
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : tickets.isEmpty
                   ? const Center(
                       child: Text(
                         "No tickets found",
@@ -49,12 +72,28 @@ class ViewTicketRaisingScreen extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final ticket = tickets[index];
 
-                        // ✅ SAFE DATE HANDLING
-                        DateTime dateTime;
-                        if (ticket["date"] is DateTime) {
+                        // Safe Date Handling
+                        // API might return string or timestamp.
+                        // Typically API returns String for date in PHP/MySQL backend often.
+                        // But previous code expected DateTime or handled it.
+                        // Let's try to parse if string.
+
+                        DateTime dateTime = DateTime.now();
+                        if (ticket["date"] is String) {
+                          try {
+                            dateTime = DateTime.parse(ticket["date"]);
+                          } catch (e) {
+                            // Keep default now or try another format if needed?
+                          }
+                        } else if (ticket["created_at"] != null) {
+                          // Common key
+                          try {
+                            dateTime = DateTime.parse(
+                              ticket["created_at"].toString(),
+                            );
+                          } catch (e) {}
+                        } else if (ticket["date"] is DateTime) {
                           dateTime = ticket["date"];
-                        } else {
-                          dateTime = DateTime.now();
                         }
 
                         final formattedDate = DateFormat(
@@ -64,21 +103,24 @@ class ViewTicketRaisingScreen extends StatelessWidget {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _ticketCard(
-                            title: ticket["title"] ?? "No Title",
+                            title:
+                                ticket["subject"] ??
+                                ticket["title"] ??
+                                "No Title",
                             dept:
-                                "Dept: ${ticket["dept"] ?? "-"}",
+                                "Dept: ${ticket["department"] ?? ticket["dept"] ?? "-"}",
                             date: formattedDate,
                             priority:
-                                "Priority: ${ticket["priority"] ?? "-"}",
+                                "Priority: ${ticket["priority"] ?? "Normal"}",
                             status: ticket["status"] ?? "Pending",
                             statusColor:
                                 (ticket["status"] ?? "Pending") == "Pending"
-                                    ? Colors.orange.shade100
-                                    : Colors.green.shade100,
+                                ? Colors.orange.shade100
+                                : Colors.green.shade100,
                             statusTextColor:
                                 (ticket["status"] ?? "Pending") == "Pending"
-                                    ? Colors.orange
-                                    : Colors.green,
+                                ? Colors.orange
+                                : Colors.green,
                           ),
                         );
                       },
@@ -99,10 +141,8 @@ class ViewTicketRaisingScreen extends StatelessWidget {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const TicketRaise(),
-                    ),
-                  );
+                    MaterialPageRoute(builder: (_) => const TicketRaise()),
+                  ).then((_) => _fetchTickets()); // Refresh on return
                 },
                 child: const Text(
                   'Raise Ticket',
@@ -186,7 +226,9 @@ class ViewTicketRaisingScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: statusColor,
                   borderRadius: BorderRadius.circular(6),

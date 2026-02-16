@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.hrm"
+    namespace = "com.erp.smart.hrm"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

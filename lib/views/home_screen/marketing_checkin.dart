@@ -46,13 +46,13 @@ class _MarketingScreenState extends State<MarketingScreen> {
     // If not found, fetch from API
     final loginUid = (prefs.getInt('uid') ?? 0).toString();
 
-    // If we have a loginUid, trust it as the employee_table_id immediately
+    // Trust loginUid as employeeTableId if valid
     if (loginUid != "0") {
-      await prefs.setString('employee_table_id', loginUid);
       setState(() {
         employeeTableId = loginUid;
-        _isEmpLoading = false;
       });
+      // Don't return, allow fetching details to confirm, but trigger history fetch NOW
+      _fetchHistoryFromApi();
     }
 
     try {
@@ -68,14 +68,100 @@ class _MarketingScreenState extends State<MarketingScreen> {
         // Handle flat structure or nested "data"
         final data = res["data"] ?? res;
 
-        // We only care about details, ID is already settled
-        // Logic to update other details if needed could go here
+        // If ID wasn't set before (loginUid was 0), update it now
+        if (employeeTableId == null || employeeTableId == "0") {
+          String? apiId = (data["uid"] ?? data["id"])?.toString();
+          if (apiId != null) {
+            setState(() => employeeTableId = apiId);
+            _fetchHistoryFromApi();
+          }
+        }
+
         debugPrint("Employee Details Fetched for $loginUid");
       }
     } catch (e) {
       debugPrint("Employee fetch error => $e");
     } finally {
       if (mounted) setState(() => _isEmpLoading = false);
+    }
+  }
+
+  Future<void> _fetchHistoryFromApi() async {
+    // Get saved location or use defaults
+    final prefs = await SharedPreferences.getInstance();
+    final lat = prefs.getDouble('lat')?.toString() ?? "145";
+    final lng = prefs.getDouble('lng')?.toString() ?? "145";
+    final deviceId =
+        "12345"; // As per user request example (was 123456 in checkin)
+
+    try {
+      final res = await MarketingApi.fetchHistory(
+        uid: employeeTableId!,
+        cid: "21472147",
+        lat: lat,
+        lng: lng,
+        deviceId: deviceId,
+        type: "2062",
+      );
+
+      print("Marketing History Full Response: $res");
+      print("Marketing History Raw Data: ${res["data"]}");
+
+      if (res["error"] == false) {
+        // "data" can be null or empty list
+        List<dynamic> apiData = res["data"] ?? [];
+        if (apiData.isEmpty) {
+          setState(() => history = []);
+          return;
+        }
+
+        setState(() {
+          history = apiData
+              .map((e) {
+                // Determine Status (from JSON: status="closed")
+                String? statusApi = e["status"]?.toString().toLowerCase();
+                String statusLocal = "Completed";
+                Color color = const Color(0xff3CA80A);
+
+                if (statusApi == "closed" || statusApi == "completed") {
+                  statusLocal = "Completed";
+                  color = const Color(0xff3CA80A);
+                } else {
+                  // Assume anything else might be open
+                  statusLocal = "In Progress";
+                  color = Colors.redAccent;
+                }
+
+                // Fields from JSON
+                String clientName =
+                    e["client_name"] ?? e["company"] ?? "Unknown Client";
+                String checkIn = e["check_in_time"] ?? "00:00:00";
+                String? checkOut = e["check_out_time"]
+                    ?.toString(); // Handle nullable
+
+                // Format Time Display
+                String timeDisplay = checkIn;
+                if (statusLocal == "Completed" &&
+                    checkOut != null &&
+                    checkOut != "00:00:00") {
+                  timeDisplay = "$checkIn – $checkOut";
+                }
+
+                return {
+                  "company": clientName,
+                  "time": timeDisplay,
+                  "status": statusLocal,
+                  "statusColor": color,
+                };
+              })
+              .toList()
+              .cast<Map<String, dynamic>>();
+
+          _saveHistory(history);
+        });
+      }
+    } catch (e) {
+      debugPrint("History Fetch Error: $e");
     }
   }
 
@@ -367,67 +453,70 @@ class _MarketingScreenState extends State<MarketingScreen> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(isTablet ? 24 : 16),
-        child: Column(
-          children: [
-            if (isCheckedIn)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF9AD9D0),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.verified, color: Colors.blue, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Check in Successfully",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
+      body: RefreshIndicator(
+        onRefresh: _fetchHistoryFromApi,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(isTablet ? 24 : 16),
+          child: Column(
+            children: [
+              if (isCheckedIn)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9AD9D0),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.verified, color: Colors.blue, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Check in Successfully",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+              SizedBox(height: isTablet ? 30 : 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTimeCard(
+                      context: context,
+                      title: "Check In",
+                      time: isCheckedIn ? checkInTime : "00.00.00",
+                      isCheckIn: true,
+                      bgColor: isCheckedIn
+                          ? const Color(0xFF66BE2F)
+                          : const Color(0xFFDBDBDB),
+                      textColor: isCheckedIn
+                          ? Colors.white
+                          : const Color(0xff1B2C61),
                     ),
-                  ],
-                ),
+                  ),
+                  SizedBox(width: isTablet ? 20 : 12),
+                  Expanded(
+                    child: _buildTimeCard(
+                      context: context,
+                      title: "Check Out",
+                      time: checkOutTime,
+                      bgColor: const Color(0xffD9D9D9),
+                      textColor: const Color(0xff1B2C61),
+                    ),
+                  ),
+                ],
               ),
-            SizedBox(height: isTablet ? 30 : 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTimeCard(
-                    context: context,
-                    title: "Check In",
-                    time: isCheckedIn ? checkInTime : "00.00.00",
-                    isCheckIn: true,
-                    bgColor: isCheckedIn
-                        ? const Color(0xFF66BE2F)
-                        : const Color(0xFFDBDBDB),
-                    textColor: isCheckedIn
-                        ? Colors.white
-                        : const Color(0xff1B2C61),
-                  ),
-                ),
-                SizedBox(width: isTablet ? 20 : 12),
-                Expanded(
-                  child: _buildTimeCard(
-                    context: context,
-                    title: "Check Out",
-                    time: checkOutTime,
-                    bgColor: const Color(0xffD9D9D9),
-                    textColor: const Color(0xff1B2C61),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: isTablet ? 30 : 20),
-            _buildHistorySection(context),
-          ],
+              SizedBox(height: isTablet ? 30 : 20),
+              _buildHistorySection(context),
+            ],
+          ),
         ),
       ),
     );

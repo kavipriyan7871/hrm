@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,9 +27,12 @@ class _CheckOutVerificationScreenState
   final TextEditingController outTimeController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
 
+  Timer? _timer;
+
   String selectedMode = 'Mode of work';
   bool isLoading = false;
   int? uid;
+  String? cid;
   String? deviceId;
   Position? currentPosition;
 
@@ -46,10 +50,20 @@ class _CheckOutVerificationScreenState
 
   @override
   void dispose() {
+    _timer?.cancel();
     outTimeController.dispose();
     locationController.dispose();
     _faceDetectorService.dispose();
     super.dispose();
+  }
+
+  void _updateTime() {
+    if (mounted) {
+      final now = DateTime.now();
+      setState(() {
+        outTimeController.text = DateFormat('hh:mm:ss a').format(now);
+      });
+    }
   }
 
   Future<void> _getDeviceId() async {
@@ -65,9 +79,11 @@ class _CheckOutVerificationScreenState
   }
 
   Future<void> _fetchLocationAndTime() async {
-    // 1. Set Current Time
-    final now = DateTime.now();
-    outTimeController.text = DateFormat('hh:mm a').format(now);
+    // 1. Set Current Time and Start Timer
+    _updateTime();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _updateTime();
+    });
 
     // 2. Fetch Location
     setState(() {
@@ -135,8 +151,9 @@ class _CheckOutVerificationScreenState
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       uid = prefs.getInt('uid') ?? 4;
+      cid = prefs.getString('cid') ?? "21472147";
     });
-    debugPrint("LOADED UID (CHECK-OUT) => $uid");
+    debugPrint("LOADED UID: $uid, CID: $cid");
   }
 
   @override
@@ -177,9 +194,8 @@ class _CheckOutVerificationScreenState
               _label('Out Time'),
               _textField(
                 controller: outTimeController,
-                hint: 'Tap to select time',
+                hint: 'Current Time',
                 readOnly: true,
-                onTap: _pickTime,
                 prefixIcon: Icons.access_time_outlined,
               ),
               const SizedBox(height: 14),
@@ -521,17 +537,6 @@ class _CheckOutVerificationScreenState
     }
   }
 
-  Future<void> _pickTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-
-    if (picked != null) {
-      outTimeController.text = picked.format(context);
-    }
-  }
-
   void _submit() async {
     String? errorMsg;
     if (uid == null) {
@@ -563,14 +568,13 @@ class _CheckOutVerificationScreenState
       );
 
       request.fields.addAll({
-        "type": "2047", // Assuming 2047 for check-out
-        "cid": "21472147",
+        "type": "2047",
+        "cid": cid ?? "21472147",
         "uid": uid.toString(),
         "out_time": outTimeController.text,
         "loc": locationController.text,
         "wrk_mde": selectedMode,
         "device_id": deviceId ?? "unknown",
-        // "ld": "34",
         "lt": currentPosition?.latitude.toString() ?? "0.0",
         "ln": currentPosition?.longitude.toString() ?? "0.0",
       });

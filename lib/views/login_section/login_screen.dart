@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:hrm/views/login_section/sign-in_sms.dart';
 import 'package:hrm/views/login_section/sign-in_whatsapp.dart';
+import 'package:hrm/views/login_section/sign-up.dart';
 import '../../models/login_api.dart';
 import 'otp_popup.dart';
 
@@ -96,10 +97,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: isLoadingLogin
                         ? null
                         : () async {
-                            if (_emailController.text.isEmpty) {
+                            if (_emailController.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text("Please enter mobile number"),
+                                  content: Text("Please enter your email"),
+                                ),
+                              );
+                              return;
+                            }
+
+                            if (!RegExp(
+                              r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
+                            ).hasMatch(_emailController.text.trim())) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Please enter a valid email"),
                                 ),
                               );
                               return;
@@ -279,7 +291,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     GestureDetector(
                       onTap: () {
-                        // Navigate to Sign Up screen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SignupScreen(),
+                          ),
+                        );
                       },
                       child: const Text(
                         "Sign Up",

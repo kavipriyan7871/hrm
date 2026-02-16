@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hrm/views/home/security.dart';
-import 'package:hrm/views/login_section/sign-up.dart';
+import 'package:hrm/views/home_screen/employee_detail.dart';
+import 'package:hrm/views/login_section/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main_root.dart';
 import 'account_setting.dart';
@@ -69,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
 
       if (response["error"] == false || response["error"] == "false") {
+        if (!mounted) return;
         setState(() {
           userName = response["name"] ?? "User";
           userCode = response["employee_code"] ?? "";
@@ -88,6 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await prefs.setString('address', response["address"] ?? "");
         await prefs.setString('profile_photo', profilePhoto);
       } else {
+        if (!mounted) return;
         setState(() {
           userName = prefs.getString('name') ?? "User";
           userMobile = prefs.getString('mobile') ?? "";
@@ -96,7 +99,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       debugPrint("Error fetching employee details: $e");
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
@@ -163,21 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Edit',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(
-                                Icons.edit,
-                                color: Colors.white70,
-                                size: 12,
-                              ),
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -191,14 +181,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              const Text(
-                                'View Full Profile',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  decoration: TextDecoration.underline,
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const EmployeeDetailsScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  'View Full Profile',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    decoration: TextDecoration.underline,
+                                  ),
                                 ),
                               ),
+
                               const SizedBox(width: 20),
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -439,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               Navigator.pushAndRemoveUntil(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => const SignupScreen(),
+                                  builder: (_) => const LoginScreen(),
                                 ),
                                 (route) => false,
                               );

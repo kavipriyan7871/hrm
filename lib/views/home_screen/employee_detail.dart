@@ -20,8 +20,13 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
   String doj = "";
   String dob = "";
   String address = "";
+  String gender = "";
   String mobile = "";
   String profilePhoto = "";
+  String institutionName = "";
+  String qualification = "";
+  String specification = "";
+  String passedOut = "";
   String? employeeTableId;
 
   @override
@@ -39,8 +44,13 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
       doj = prefs.getString('doj') ?? "";
       dob = prefs.getString('dob') ?? "";
       address = prefs.getString('address') ?? "";
+      gender = prefs.getString('gender') ?? "";
       mobile = prefs.getString('mobile') ?? "";
       profilePhoto = prefs.getString('profile_photo') ?? "";
+      institutionName = prefs.getString('institution_name') ?? "";
+      qualification = prefs.getString('qualification') ?? "";
+      specification = prefs.getString('specification') ?? "";
+      passedOut = prefs.getString('passed_out') ?? "";
     });
   }
 
@@ -274,7 +284,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
       children: [
         row("Date of Birth", dob),
         row("Age", "-"),
-        row("Gender", "Male"),
+        row("Gender", gender),
         row("Address", address),
         row("Phone Number", mobile),
       ],
@@ -284,10 +294,10 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
   Widget EducationDetails() {
     return Column(
       children: [
-        row("Institution Name", "Annamalai University"),
-        row("Degree/Diploma", "B.E"),
-        row("Specification", "CSE"),
-        row("Passed Out", "2025"),
+        row("Institution Name", institutionName),
+        row("Degree/Diploma", qualification),
+        row("Specification", specification),
+        row("Passed Out", passedOut),
       ],
     );
   }

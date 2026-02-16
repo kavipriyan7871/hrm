@@ -16,23 +16,41 @@ class _TicketRaiseState extends State<TicketRaise> {
 
   String? _selectedDepartment;
   bool isLoading = false;
+  bool isDeptsLoading = true; // New loading state for depts
 
   final List<Map<String, dynamic>> _myTickets = [];
+  List<String> departmentList = []; // Made dynamic
 
-  final List<String> departmentList = [
-    "Admin",
-    "AI",
-    "Customer Support",
-    "Digital Marketing",
-    "Flutter Developer",
-    "HR",
-    "Management",
-    "Marketing",
-    "Operation",
-    "PHP Developer",
-    "Software Testing",
-    "UI/UX Designer",
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchDepartments();
+  }
+
+  Future<void> _fetchDepartments() async {
+    final depts = await TicketApi.fetchDepartments();
+    if (mounted) {
+      setState(() {
+        // Assuming the API returns objects with a "name" or "department_name" key.
+        // Fallback to "name" or just use the whole map if needed.
+        // Based on typical patterns, let's try to find a likely key.
+        // If the list is empty, we might keep it empty or show error.
+        departmentList = depts.map<String>((e) {
+          return e['department_name']?.toString() ??
+              e['name']?.toString() ??
+              e.toString();
+        }).toList();
+
+        // Remove duplicates and empty strings
+        departmentList = departmentList
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
+
+        isDeptsLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,10 +62,7 @@ class _TicketRaiseState extends State<TicketRaise> {
         elevation: 0,
         title: Text(
           "Ticket Raise",
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.w500,
-          ),
+          style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w500),
         ),
       ),
       body: SingleChildScrollView(
@@ -126,6 +141,10 @@ class _TicketRaiseState extends State<TicketRaise> {
     setState(() => isLoading = false);
 
     if (result["success"] == true) {
+      // Pass empty list to ViewTicketRaisingScreen, as it will fetch its own tickets now
+      // Or we can add the new one artificially if we want immediate feedback,
+      // but better to let it fetch fresh.
+      // However, the original code passed _myTickets.
       _myTickets.add({
         "title": _subjectController.text.trim(),
         "dept": _selectedDepartment!,
@@ -159,9 +178,8 @@ class _TicketRaiseState extends State<TicketRaise> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => ViewTicketRaisingScreen(
-            tickets: _myTickets,
-          ),
+          // We can remove tickets arg since the screen will fetch them
+          builder: (_) => const ViewTicketRaisingScreen(),
         ),
       );
     });
@@ -183,19 +201,24 @@ class _TicketRaiseState extends State<TicketRaise> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.grey.shade300),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              hint: const Text("Select Department"),
-              value: _selectedDepartment,
-              items: departmentList
-                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                  .toList(),
-              onChanged: (value) => setState(() {
-                _selectedDepartment = value;
-              }),
-            ),
-          ),
+          child: isDeptsLoading
+              ? const SizedBox(
+                  height: 50,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    hint: const Text("Select Department"),
+                    value: _selectedDepartment,
+                    items: departmentList
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (value) => setState(() {
+                      _selectedDepartment = value;
+                    }),
+                  ),
+                ),
         ),
       ],
     );

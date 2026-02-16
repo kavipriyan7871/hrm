@@ -76,6 +76,14 @@ class _SmsLoginState extends State<SmsLogin> {
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  buildCounter:
+                      (
+                        context, {
+                        required currentLength,
+                        required isFocused,
+                        maxLength,
+                      }) => null,
                   decoration: const InputDecoration(
                     labelText: "Enter Mobile Number",
                     labelStyle: TextStyle(color: Colors.black54),
@@ -246,8 +254,19 @@ class _SmsLoginState extends State<SmsLogin> {
 
   /// ✅ SEND OTP API
   Future<void> _sendOtpApi() async {
-    if (_emailController.text.isEmpty) {
+    final mobile = _emailController.text.trim();
+    if (mobile.isEmpty) {
       _snack("Please enter mobile number", false);
+      return;
+    }
+
+    if (mobile.length != 10) {
+      _snack("Mobile number must be exactly 10 digits", false);
+      return;
+    }
+
+    if (!RegExp(r'^[0-9]+$').hasMatch(mobile)) {
+      _snack("Mobile number must contain only digits", false);
       return;
     }
 

@@ -359,6 +359,38 @@ class _SignupScreenState extends State<SignupScreen> {
 
   /// ✅ SIGNUP API CALL
   Future<void> _signupApiCall() async {
+    final name = nameCtrl.text.trim();
+    final email = emailCtrl.text.trim();
+    final mobile = mobileCtrl.text.trim();
+    final whatsapp = whatsappCtrl.text.trim();
+
+    if (name.isEmpty) {
+      _showSnack("Please enter your name", false);
+      return;
+    }
+
+    if (email.isEmpty ||
+        !RegExp(
+          r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
+        ).hasMatch(email)) {
+      _showSnack("Please enter a valid email", false);
+      return;
+    }
+
+    if (mobile.isEmpty ||
+        mobile.length != 10 ||
+        !RegExp(r'^[0-9]+$').hasMatch(mobile)) {
+      _showSnack("Please enter a valid 10-digit mobile number", false);
+      return;
+    }
+
+    if (whatsapp.isEmpty ||
+        whatsapp.length != 10 ||
+        !RegExp(r'^[0-9]+$').hasMatch(whatsapp)) {
+      _showSnack("Please enter a valid 10-digit WhatsApp number", false);
+      return;
+    }
+
     if (!_isAgreed) {
       _showSnack("Please accept terms", false);
       return;

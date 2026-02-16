@@ -123,22 +123,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             color: Colors.black,
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: () {},
-                          icon: Image.asset(
-                            "assets/edit.png",
-                            width: 20,
-                            height: 20,
-                          ),
-                          label: const Text(
-                            "Edit",
-                            style: TextStyle(
-                              color: Color(0xff19893F),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 20),

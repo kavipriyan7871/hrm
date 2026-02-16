@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:intl/intl.dart';
 
 import 'monthly_history.dart';
 
@@ -13,6 +20,121 @@ class AttendanceHistoryScreen extends StatefulWidget {
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   int selectedTab = 0;
+  bool isLoading = false;
+  Map<String, dynamic>? stats;
+  List<dynamic> attendanceList = [];
+
+  // Current Week Logic
+  DateTime now = DateTime.now();
+  late DateTime startOfWeek;
+  late DateTime endOfWeek;
+
+  // API Params
+  String cid = "21472147";
+  int uid = 0;
+  String? deviceId;
+  String userName = "User";
+  bool isCheckedIn = false;
+  bool breakSwitch = false;
+
+  // Mimic attendance.dart methods if needed or simplified
+
+  @override
+  void initState() {
+    super.initState();
+    // Calculate start of week (Monday)
+    // DateTime.weekday: Mon=1 ... Sun=7
+    startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    endOfWeek = startOfWeek.add(const Duration(days: 6));
+
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      cid = prefs.getString('cid') ?? "21472147";
+      uid = prefs.getInt('uid') ?? 0;
+      userName = prefs.getString('name') ?? "User";
+      isCheckedIn = prefs.getBool('isCheckedIn') ?? false;
+    });
+    await _getDeviceId();
+    _fetchWeeklyData();
+  }
+
+  Future<void> _getDeviceId() async {
+    final deviceInfo = DeviceInfoPlugin();
+    try {
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        deviceId = androidInfo.id;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        deviceId = iosInfo.identifierForVendor;
+      }
+    } catch (e) {
+      deviceId = "unknown";
+    }
+  }
+
+  Future<void> _fetchWeeklyData() async {
+    if (isLoading) return;
+    setState(() => isLoading = true);
+
+    try {
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+        );
+      } catch (e) {
+        debugPrint("Location error: $e");
+      }
+
+      // We fetch data for the current month/year to get the records
+      // API seemed to use month/year or just return list.
+      // We will try sending month/year covering the week.
+      // If week crosses months, might need two calls or API handles date range?
+      // Assuming API handles "month" param.
+
+      final body = {
+        "type": "2064",
+        "cid": cid,
+        "uid": uid.toString(),
+        "device_id": deviceId ?? "unknown",
+        "lt": position?.latitude.toString() ?? "0.0",
+        "ln": position?.longitude.toString() ?? "0.0",
+        "month": startOfWeek.month.toString(),
+        "year": startOfWeek.year.toString(),
+        // Potentially add "from_date": startOfWeek... if API supports
+      };
+
+      debugPrint("Weekly Request: $body");
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: body,
+      );
+
+      final data = jsonDecode(response.body);
+      if (data["error"] == false || data["error"] == "false") {
+        setState(() {
+          if (data["statistics"] != null) {
+            stats = Map<String, dynamic>.from(data["statistics"]);
+          }
+          if (data["data"] != null) {
+            attendanceList = List<dynamic>.from(data["data"]);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching weekly data: $e");
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
 
   BoxDecoration cardDecoration() {
     return BoxDecoration(
@@ -34,6 +156,49 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     final w = MediaQuery.of(context).size.width;
     final h = MediaQuery.of(context).size.height;
     final teal = const Color(0xff00A79D);
+
+    String dateRange =
+        "${DateFormat('MMM d').format(startOfWeek)} – ${DateFormat('MMM d, y').format(endOfWeek)}";
+
+    // Calculate Weekly Progress locally based on attendanceList
+    // Get records within this week range
+    int daysPresent = 0;
+    int daysPassedInWeek = 0;
+
+    // Days present
+    daysPresent = attendanceList.where((record) {
+      String dateStr = record["date"] ?? "";
+      if (dateStr.isEmpty) return false;
+      DateTime? rd = DateTime.tryParse(dateStr);
+      if (rd == null) return false;
+      // Check range
+      if (rd.isBefore(startOfWeek) ||
+          rd.isAfter(endOfWeek.add(const Duration(days: 1))))
+        return false;
+
+      String status = record["status"]?.toString().toLowerCase() ?? "";
+      return status.contains("present") || status.contains("check out");
+    }).length;
+
+    // Days passed in week (denominator)
+    // If current week: up to today (or end of week if past)
+    // StartOfWeek is usually Monday.
+    DateTime now = DateTime.now();
+    if (now.isAfter(endOfWeek)) {
+      daysPassedInWeek = 6; // Full week (assuming 6 days work week)
+    } else if (now.isBefore(startOfWeek)) {
+      daysPassedInWeek = 0; // Future
+    } else {
+      // Inside current week
+      // difference in days + 1
+      daysPassedInWeek = now.difference(startOfWeek).inDays + 1;
+      if (daysPassedInWeek > 6) daysPassedInWeek = 6;
+    }
+
+    double progress = 0.0;
+    if (daysPassedInWeek > 0) {
+      progress = (daysPresent / daysPassedInWeek).clamp(0.0, 1.0);
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xffF5F7F8),
@@ -61,173 +226,247 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(w * 0.04),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(25),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  Expanded(child: tabButton("Weekly", 0)),
-                  const SizedBox(width: 8),
-                  Expanded(child: tabButton("Monthly", 1)),
-                ],
-              ),
-            ),
-
-            SizedBox(height: h * 0.02),
-
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: 14),
-              decoration: cardDecoration(),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Icon(Icons.arrow_left),
-                  Text(
-                    "Jan 13 – Jan 19, 2026",
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  Icon(Icons.arrow_right),
-                ],
-              ),
-            ),
-
-            SizedBox(height: h * 0.02),
-
-            /// STATS
-            Row(
-              children: [
-                Expanded(
-                  child: statsBox(
-                    "Total Hours",
-                    "38h 30m",
-                    valueColor: Colors.black,
-                  ),
-                ),
-                SizedBox(width: w * 0.03),
-                Expanded(
-                  child: statsBox("Overtime", "2h 15m", valueColor: Colors.red),
-                ),
-              ],
-            ),
-
-            SizedBox(height: h * 0.02),
-
-            Container(
-              decoration: cardDecoration(),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
               padding: EdgeInsets.all(w * 0.04),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: tabButton("Weekly", 0)),
+                        const SizedBox(width: 8),
+                        Expanded(child: tabButton("Monthly", 1)),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: h * 0.02),
+
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: w * 0.04,
+                      vertical: 14,
+                    ),
+                    decoration: cardDecoration(),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_left),
+                          onPressed: () {
+                            setState(() {
+                              startOfWeek = startOfWeek.subtract(
+                                const Duration(days: 7),
+                              );
+                              endOfWeek = endOfWeek.subtract(
+                                const Duration(days: 7),
+                              );
+                            });
+                            _fetchWeeklyData();
+                          },
+                        ),
+                        Text(
+                          dateRange,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_right),
+                          onPressed: () {
+                            DateTime nextWeekStart = startOfWeek.add(
+                              const Duration(days: 7),
+                            );
+                            if (nextWeekStart.isAfter(DateTime.now())) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Cannot navigate to future weeks",
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            setState(() {
+                              startOfWeek = startOfWeek.add(
+                                const Duration(days: 7),
+                              );
+                              endOfWeek = endOfWeek.add(
+                                const Duration(days: 7),
+                              );
+                            });
+                            _fetchWeeklyData();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: h * 0.02),
+
+                  /// STATS
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
-                        "Attendance Progress",
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                    children: [
+                      Expanded(
+                        child: statsBox(
+                          "Total Hours",
+                          stats != null && stats!["total_hours_worked"] != null
+                              ? "${stats!["total_hours_worked"]}h"
+                              : "0h",
+                          valueColor: Colors.black,
                         ),
                       ),
-                      Text(
-                        "4/6 days",
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      SizedBox(width: w * 0.03),
+                      Expanded(
+                        child: statsBox(
+                          "Overtime",
+                          stats != null && stats!["overtime"] != null
+                              ? stats!["overtime"].toString()
+                              : "0h 00m",
+                          valueColor: Colors.red,
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(height: 10),
-                  LinearProgressIndicator(
-                    value: 0.8,
-                    minHeight: 8,
-                    color: Colors.blue,
-                    backgroundColor: Colors.grey.shade300,
-                  ),
-                  SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
-                        "This week",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+
+                  // Logic moved up
+                  Container(
+                    decoration: cardDecoration(),
+                    padding: EdgeInsets.all(w * 0.04),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Attendance Progress",
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              "${(progress * 100).toStringAsFixed(0)}%",
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      Text(
-                        "80%",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                        const SizedBox(height: 10),
+                        LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 8,
+                          color: Colors.blue,
+                          backgroundColor: Colors.grey.shade300,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "$daysPresent of $daysPassedInWeek work days completed",
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            if (now.isAfter(startOfWeek) &&
+                                now.isBefore(
+                                  endOfWeek.add(const Duration(days: 1)),
+                                ) &&
+                                daysPassedInWeek > 0)
+                              Text(
+                                "(Current Week)",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+
+                  SizedBox(height: h * 0.02),
+
+                  /// DAY CARDS - Dynamic List
+                  if (attendanceList.isEmpty)
+                    const Center(child: Text("No records for this week"))
+                  else
+                    ListView.builder(
+                      physics: const NeverScrollableScrollPhysics(),
+                      shrinkWrap: true,
+                      itemCount: attendanceList.length,
+                      itemBuilder: (context, index) {
+                        final record = attendanceList[index];
+                        final dateStr = record["date"] ?? "";
+
+                        // Filter records for this week locally just in case
+                        DateTime? recordDate;
+                        try {
+                          if (dateStr.isNotEmpty)
+                            recordDate = DateTime.parse(dateStr);
+                        } catch (e) {}
+
+                        if (recordDate != null) {
+                          // Check range
+                          if (recordDate.isBefore(startOfWeek) ||
+                              recordDate.isAfter(
+                                endOfWeek.add(const Duration(days: 1)),
+                              )) {
+                            return const SizedBox.shrink(); // Skip
+                          }
+                        }
+
+                        return attendanceCard(
+                          day: recordDate != null
+                              ? DateFormat('E').format(recordDate)
+                              : "",
+                          date: recordDate != null
+                              ? DateFormat('d').format(recordDate)
+                              : "",
+                          status: record["status"] ?? "Present",
+                          statusColor:
+                              (record["status"] ?? "")
+                                  .toString()
+                                  .toLowerCase()
+                                  .contains("absent")
+                              ? Colors.red
+                              : Colors.green,
+                          leftColor:
+                              (record["status"] ?? "")
+                                  .toString()
+                                  .toLowerCase()
+                                  .contains("absent")
+                              ? Colors.red
+                              : Colors.green,
+                          checkIn: record["in_time"],
+                          checkOut: record["out_time"],
+                          breakTime:
+                              "0h 00m", // Assuming break info not in list or adjust
+                          total: "${record["overall_hours"] ?? 0}h",
+                        );
+                      },
+                    ),
                 ],
               ),
             ),
-
-            SizedBox(height: h * 0.02),
-
-            /// DAY CARDS
-            attendanceCard(
-              day: "Mon",
-              date: "13",
-              status: "Present",
-              statusColor: Colors.green,
-              leftColor: Colors.green,
-              checkIn: "09:00 AM",
-              checkOut: "06:00 PM",
-              breakTime: "1h 00m",
-              total: "8h 00m",
-            ),
-
-            attendanceCard(
-              day: "Tue",
-              date: "14",
-              status: "Present",
-              statusColor: Colors.green,
-              leftColor: Colors.green,
-              checkIn: "09:00 AM",
-              checkOut: "06:00 PM",
-              breakTime: "1h 00m",
-              overtime: "2h 30m",
-              total: "8h 00m",
-            ),
-
-            attendanceCard(
-              day: "Wed",
-              date: "15",
-              status: "Absent",
-              statusColor: Colors.red,
-              leftColor: Colors.red,
-              total: "8h 00m",
-            ),
-
-            attendanceCard(
-              day: "Thu",
-              date: "16",
-              status: "Half day",
-              statusColor: Colors.orange,
-              leftColor: Colors.orange,
-              checkIn: "01:00 PM",
-              checkOut: "06:00 PM",
-              breakTime: "1h 00m",
-              total: "4h 00m",
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -271,7 +510,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       ],
     ).then((value) {
       if (value == 'share') {
-      } else if (value == 'refresh') {}
+      } else if (value == 'refresh') {
+        _fetchWeeklyData();
+      }
     });
   }
 
@@ -402,7 +643,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       ),
                     ],
                   ),
-                  if (checkIn != null) ...[
+                  if (checkIn != null && checkIn.isNotEmpty) ...[
                     const SizedBox(height: 10),
 
                     const Divider(
@@ -417,8 +658,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         info("Check In", checkIn),
-                        info("Check Out", checkOut!),
-                        info("Break", breakTime!),
+                        if (checkOut != null && checkOut.isNotEmpty)
+                          info("Check Out", checkOut),
+                        // info("Break", breakTime!), // Hiding breakTime if not available
                       ],
                     ),
                   ],

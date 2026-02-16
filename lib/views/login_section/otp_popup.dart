@@ -377,6 +377,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
         if (employeeId != null && employeeId.isNotEmpty) {
           await prefs.setString("employee_table_id", employeeId);
           await prefs.setInt("uid", int.tryParse(employeeId) ?? 0);
+          await prefs.setString("cid", "21472147");
 
           /// 🔍 DEBUG – AFTER STORE
           debugPrint(

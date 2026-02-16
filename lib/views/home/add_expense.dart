@@ -1,6 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:dotted_border/dotted_border.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:hrm/models/expense_api.dart';
 import 'package:hrm/views/widgets/profile_card.dart';
 
 class AddExpense extends StatefulWidget {
@@ -16,6 +22,8 @@ class _AddExpenseState extends State<AddExpense> {
   final TextEditingController _descriptionController = TextEditingController();
 
   String? _selectedPurpose;
+  bool _isLoading = false;
+  File? _receiptImage;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +39,8 @@ class _AddExpenseState extends State<AddExpense> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () =>
+              Navigator.pop(context, true), // Return true to refresh
         ),
         title: Text(
           "Add Expense",
@@ -48,14 +57,6 @@ class _AddExpenseState extends State<AddExpense> {
           children: [
             const SizedBox(height: 12),
 
-            // ProfileInfoCard(
-            //   name: "Harish",
-            //   employeeId: "1023",
-            //   designation: "Supervisor",
-            //   profileImagePath: "assets/profile.png",
-            // ),
-
-            // SizedBox(height: isTablet ? 30 : 20),
             _buildDropdownField(
               context: context,
               label: "Expense Category",
@@ -122,39 +123,50 @@ class _AddExpenseState extends State<AddExpense> {
             ),
             const SizedBox(height: 8),
 
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: DottedBorder(
-                color: Colors.grey.shade400,
-                strokeWidth: 1.5,
-                dashPattern: const [6, 4],
-                borderType: BorderType.RRect,
-                radius: const Radius.circular(8),
-                child: Container(
-                  width: 360,
-                  height: 200,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.document_scanner_outlined,
-                        size: 36,
-                        color: Colors.grey.shade500,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Attach Receipt",
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey.shade500,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+            GestureDetector(
+              onTap: _pickImage,
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: DottedBorder(
+                  color: Colors.grey.shade400,
+                  strokeWidth: 1.5,
+                  dashPattern: const [6, 4],
+                  borderType: BorderType.RRect,
+                  radius: const Radius.circular(8),
+                  child: Container(
+                    width: 360,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: _receiptImage != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              _receiptImage!,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.document_scanner_outlined,
+                                size: 36,
+                                color: Colors.grey.shade500,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Attach Receipt",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade500,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
               ),
@@ -167,7 +179,7 @@ class _AddExpenseState extends State<AddExpense> {
                 width: 200,
                 height: 55,
                 child: ElevatedButton(
-                  onPressed: _submitForm,
+                  onPressed: _isLoading ? null : _submitForm,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF26A69A),
                     foregroundColor: Colors.white,
@@ -176,13 +188,15 @@ class _AddExpenseState extends State<AddExpense> {
                     ),
                     elevation: 4,
                   ),
-                  child: Text(
-                    "Add Expense",
-                    style: GoogleFonts.poppins(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                          "Add Expense",
+                          style: GoogleFonts.poppins(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -323,21 +337,93 @@ class _AddExpenseState extends State<AddExpense> {
       ),
     );
     if (picked != null) {
+      // Format as YYYY-MM-DD for standard API
       setState(() {
-        _dateController.text = "${picked.day}/${picked.month}/${picked.year}";
+        _dateController.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
   }
 
-  // DYNAMIC SUBMIT WITH REAL DATA
-  void _submitForm() {
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    // Show dialog to choose source
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a photo'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final XFile? image = await picker.pickImage(
+                    source: ImageSource.camera,
+                  );
+                  if (image != null) {
+                    setState(() => _receiptImage = File(image.path));
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final XFile? image = await picker.pickImage(
+                    source: ImageSource.gallery,
+                  );
+                  if (image != null) {
+                    setState(() => _receiptImage = File(image.path));
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Position> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+        'Location permissions are permanently denied, we cannot request permissions.',
+      );
+    }
+
+    return await Geolocator.getCurrentPosition();
+  }
+
+  Future<void> _submitForm() async {
     final amount = _amountController.text.trim();
     final purpose = _selectedPurpose ?? "Expense";
+    final description = _descriptionController.text.trim();
+    final date = _dateController.text.trim();
 
     if (amount.isEmpty ||
         _selectedPurpose == null ||
-        _descriptionController.text.trim().isEmpty ||
-        _dateController.text.isEmpty) {
+        description.isEmpty ||
+        date.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Please fill all required fields"),
@@ -347,19 +433,82 @@ class _AddExpenseState extends State<AddExpense> {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => SuccessExpenseDialog(amount: amount, purpose: purpose),
-    );
+    setState(() => _isLoading = true);
 
-    // Auto close dialog + go back after 2.5 seconds
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        Navigator.pop(context); // Close dialog
-        Navigator.pop(context); // Go back to previous screen
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid =
+          prefs.getString('employee_table_id') ??
+          prefs.getInt('uid')?.toString() ??
+          "";
+      final cid = prefs.getString('cid') ?? "21472147";
+
+      String? deviceId = prefs.getString('device_id');
+      if (deviceId == null) {
+        final deviceInfo = DeviceInfoPlugin();
+        if (Platform.isAndroid) {
+          final androidInfo = await deviceInfo.androidInfo;
+          deviceId = androidInfo.id;
+        } else if (Platform.isIOS) {
+          final iosInfo = await deviceInfo.iosInfo;
+          deviceId = iosInfo.identifierForVendor;
+        } else {
+          deviceId = "unknown_device";
+        }
       }
-    });
+
+      final position = await _determinePosition();
+
+      final response = await ExpenseRepo.addExpense(
+        cid: cid,
+        uid: uid,
+        amount: amount,
+        description:
+            description, // Consider merging purpose if needed: "$purpose - $description"
+        purpose: purpose,
+        expenseDate: date,
+        deviceId: deviceId!,
+        lat: position.latitude.toString(),
+        lng: position.longitude.toString(),
+        receiptImage: _receiptImage,
+      );
+
+      print("Add Expense Response in UI: $response");
+
+      if (!mounted) return;
+
+      if (response["error"] == false) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) =>
+              SuccessExpenseDialog(amount: amount, purpose: purpose),
+        );
+
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          if (mounted) {
+            Navigator.pop(context); // Close dialog
+            Navigator.pop(context, true); // Go back and signal refresh
+          }
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response["error_msg"] ?? "Failed to add expense"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error adding expense: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -371,7 +520,6 @@ class _AddExpenseState extends State<AddExpense> {
   }
 }
 
-// DYNAMIC SUCCESS DIALOG — SHOWS REAL ENTERED DATA
 class SuccessExpenseDialog extends StatelessWidget {
   final String amount;
   final String purpose;
@@ -397,12 +545,8 @@ class SuccessExpenseDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Custom Success Image
             Image.asset('assets/ticket_success.png', height: 80, width: 80),
-
             const SizedBox(height: 32),
-
-            // Success Text
             Text(
               "Your Expense For '$purpose' Worth",
               textAlign: TextAlign.center,

@@ -73,7 +73,15 @@ class _WhatsappLoginState extends State<WhatsappLogin> {
                 /// Email Field
                 TextField(
                   controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.phone, // Changed to phone
+                  maxLength: 10,
+                  buildCounter:
+                      (
+                        context, {
+                        required currentLength,
+                        required isFocused,
+                        maxLength,
+                      }) => null,
                   decoration: const InputDecoration(
                     labelText: "Enter WhatsApp Number",
                     labelStyle: TextStyle(color: Colors.black54),
@@ -96,10 +104,34 @@ class _WhatsappLoginState extends State<WhatsappLogin> {
                     onPressed: isLoading
                         ? null
                         : () async {
-                            if (_emailController.text.isEmpty) {
+                            final mobile = _emailController.text.trim();
+
+                            if (mobile.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text("Please enter WhatsApp number"),
+                                ),
+                              );
+                              return;
+                            }
+
+                            if (mobile.length != 10) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "WhatsApp number must be exactly 10 digits",
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            if (!RegExp(r'^[0-9]+$').hasMatch(mobile)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "WhatsApp number must contain only digits",
+                                  ),
                                 ),
                               );
                               return;

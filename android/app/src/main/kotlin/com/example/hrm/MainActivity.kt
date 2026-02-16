@@ -1,4 +1,4 @@
-package com.example.hrm
+package com.erp.smart.hrm
 
 import io.flutter.embedding.android.FlutterActivity
 

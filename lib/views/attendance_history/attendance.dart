@@ -60,12 +60,17 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   Position? currentPosition;
   int? currentBreakId; // Store break_id from API response
 
+  Map<String, dynamic>? attendanceHistory;
+  bool isHistoryLoading = false;
+
   @override
   void initState() {
     super.initState();
     _loadUid();
     _loadEmployeeData();
-    _getDeviceId();
+    _getDeviceId().then((_) {
+      _fetchAttendanceSummary();
+    });
   }
 
   Future<void> _loadUid() async {
@@ -79,6 +84,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       employeeName = prefs.getString('name');
       employeeCode = prefs.getString('employee_code');
     });
+    debugPrint(
+      "LOADED INITIAL STATE: isCheckedIn=$isCheckedIn, uid=$uid, cid=$cid",
+    );
   }
 
   Future<void> _loadEmployeeData() async {
@@ -243,6 +251,80 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  Future<void> _fetchAttendanceSummary() async {
+    setState(() {
+      isHistoryLoading = true;
+    });
+
+    try {
+      // Get location for API call
+      final currentPos =
+          await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          ).onError((error, stackTrace) {
+            debugPrint("Location error in fetch summary: $error");
+            return Position(
+              longitude: 0,
+              latitude: 0,
+              timestamp: DateTime.now(),
+              accuracy: 0,
+              altitude: 0,
+              heading: 0,
+              speed: 0,
+              speedAccuracy: 0,
+              altitudeAccuracy: 0,
+              headingAccuracy: 0,
+            );
+          });
+
+      // Use user provided params or dynamic
+      // User requested: "type:2064, cid:21472147, uid:8, device_id:12345, lt:145, ln:145"
+      // We will use dynamic values but stick to the provided example parameters logic if needed
+      final body = {
+        "type": "2064",
+        "cid": cid, // Dynamic or default "21472147"
+        "uid": uid.toString(), // Dynamic or default "8"
+        "device_id": deviceId ?? "123456",
+        "lt": currentPos.latitude.toString(),
+        "ln": currentPos.longitude.toString(),
+      };
+
+      debugPrint("ATTENDANCE SUMMARY REQUEST => $body");
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: body,
+      );
+
+      debugPrint("ATTENDANCE SUMMARY RESPONSE => ${response.body}");
+      final data = jsonDecode(response.body);
+
+      if (data["error"] == false || data["error"] == "false") {
+        if (mounted) {
+          setState(() {
+            if (data["statistics"] != null) {
+              attendanceHistory = Map<String, dynamic>.from(data["statistics"]);
+            } else {
+              attendanceHistory = {};
+            }
+          });
+        }
+      } else {
+        debugPrint(
+          "Error fetching history: ${data["error_msg"] ?? data["message"]}",
+        );
+      }
+    } catch (e) {
+      debugPrint("Error in _fetchAttendanceSummary: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          isHistoryLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     breakTimer?.cancel();
@@ -269,8 +351,6 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         "type": "2055",
         "cid": cid,
         "uid": serverUidString ?? uid.toString(),
-        "id": uid.toString(),
-        "name": employeeName ?? userName,
         "device_id": deviceId ?? "123456",
         "lt": currentPosition!.latitude.toString(),
         "ln": currentPosition!.longitude.toString(),
@@ -374,8 +454,6 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         "type": "2056",
         "cid": cid,
         "uid": serverUidString ?? uid.toString(),
-        "id": uid.toString(),
-        "name": employeeName ?? userName,
         "device_id": deviceId ?? "123456",
         "lt": currentPosition!.latitude.toString(),
         "ln": currentPosition!.longitude.toString(),
@@ -650,189 +728,200 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            constraints: BoxConstraints(maxHeight: h * 0.7, maxWidth: w * 0.9),
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE6F6F4),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Image.asset(
-                          "assets/cup.png",
-                          width: 32,
-                          height: 32,
-                        ),
-                      ),
-                      const SizedBox(width: 15),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              "Break Report",
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              "View all your breaks taken today",
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.black54,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Summary Cards
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
+            constraints: BoxConstraints(
+              maxHeight: h * 0.85,
+              maxWidth: w * 0.95,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: const Color(0xFFE6F6F4),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFF00A79D),
-                              width: 1,
-                            ),
                           ),
+                          child: Image.asset(
+                            "assets/cup.png",
+                            width: 32,
+                            height: 32,
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Image.asset(
-                                    "assets/cup.png",
-                                    width: 20,
-                                    height: 20,
-                                    color: const Color(0xFF00A79D),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Flexible(
-                                    child: Text(
-                                      "Total Breaks",
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black87,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
+                            children: const [
                               Text(
-                                "${breakHistory.length}",
-                                style: const TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.black,
+                                "Break Report",
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                "View all your breaks taken today",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFF00A79D),
-                              width: 1,
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Summary Cards
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE6F6F4),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFF00A79D).withOpacity(0.3),
+                                width: 1,
+                              ),
                             ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons
-                                        .access_time_outlined, // Changed to outlined icon
-                                    size: 20,
-                                    color: Color(0xFF00A79D),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      "Total Time",
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black87,
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      "assets/cup.png",
+                                      width: 20,
+                                      height: 20,
+                                      color: const Color(0xFF00A79D),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Flexible(
+                                      child: Text(
+                                        "Total Breaks",
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black87,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    "${breakHistory.length}",
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF00A79D),
                                     ),
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _formatDurationHoursMinutes(totalBreakDuration),
-                                style: const TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.black,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFFF9800).withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: const [
+                                    Icon(
+                                      Icons.access_time,
+                                      size: 20,
+                                      color: Color(0xFFFF9800),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        "Total Time",
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.black87,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _formatDurationHoursMinutes(
+                                      totalBreakDuration,
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFFF9800),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-                // Break History Section
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      "Break History",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                  // Break History Section
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Break History",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // Break History List
-                Expanded(
-                  child: breakHistory.isEmpty
+                  // Break History List
+                  breakHistory.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(40),
                           child: Column(
@@ -865,6 +954,8 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                         )
                       : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           itemCount: breakHistory.length,
                           itemBuilder: (context, index) {
@@ -909,8 +1000,6 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                                             fontWeight: FontWeight.w600,
                                             color: Colors.black87,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 8),
                                         Row(
@@ -976,10 +1065,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                             );
                           },
                         ),
-                ),
-
-                const SizedBox(height: 20),
-              ],
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           ),
         );
@@ -1055,6 +1143,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // DEBUG LABEL
               timeTrackingCard(w, h),
               if (breakSwitch) ...[
                 SizedBox(height: h * 0.02),
@@ -1201,12 +1290,11 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                   ),
                 ),
                 SizedBox(width: w * 0.03),
-                Flexible(
-                  // Added Flexible
-                  child: const Text(
+                const Flexible(
+                  child: Text(
                     "Today Work Progress Report",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    overflow: TextOverflow.ellipsis, // Added ellipsis
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -1269,6 +1357,15 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             w: w,
             h: h,
             onTap: () async {
+              if (breakSwitch) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please end your break before checking out'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
               final result = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
@@ -1376,10 +1473,18 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         onPressed: isLoading
             ? null
             : () async {
+                debugPrint(
+                  "Break Button Pressed. Current isCheckedIn: $isCheckedIn",
+                );
+                debugPrint(
+                  "Break Button Pressed. Current isCheckedIn: $isCheckedIn, breakSwitch: $breakSwitch",
+                );
                 if (!isCheckedIn) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please check-in first to start/end break'),
+                    SnackBar(
+                      content: Text(
+                        'You must check in first before taking a break!',
+                      ),
                       backgroundColor: Colors.red,
                     ),
                   );
@@ -1436,11 +1541,17 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 inactiveThumbColor: const Color(0xffD9D9D9),
                 inactiveTrackColor: Colors.grey.shade500,
                 onChanged: (value) async {
+                  debugPrint(
+                    "Break Switch Changed: $value, isCheckedIn: $isCheckedIn",
+                  );
+                  debugPrint(
+                    "Break Switch Changed: $value, isCheckedIn: $isCheckedIn",
+                  );
                   if (!isCheckedIn) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Please check-in first to start/end break',
+                          'You must check in first before taking a break!',
                         ),
                         backgroundColor: Colors.red,
                       ),
@@ -1527,15 +1638,12 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            isCheckedIn ? "Checked In" : "Not Checked In",
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: isCheckedIn ? Colors.green : Colors.grey,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          isCheckedIn ? "Checked In" : "Not Checked In",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: isCheckedIn ? Colors.green : Colors.grey,
                           ),
                         ),
                       ],
@@ -1630,6 +1738,26 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget attendanceProgressCard(double w, double h, Color teal) {
+    // Calculate progress for dashboard metrics
+    double progress = 0.0;
+    int daysPresent = 0;
+    int totalWorkingDays = 1;
+
+    if (attendanceHistory != null && !isHistoryLoading) {
+      // Use stats from API if reliable
+      daysPresent =
+          int.tryParse(
+            attendanceHistory!["total_records"]?.toString() ?? "0",
+          ) ??
+          0;
+
+      DateTime now = DateTime.now();
+      totalWorkingDays = now.day; // Approximation: days passed in month
+
+      if (totalWorkingDays == 0) totalWorkingDays = 1;
+      progress = (daysPresent / totalWorkingDays).clamp(0.0, 1.0);
+    }
+
     return Container(
       padding: EdgeInsets.all(w * 0.04),
       decoration: cardDecoration(),
@@ -1674,13 +1802,23 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 Expanded(
                   child: statsBox(
                     "Total Hours",
-                    "38h 30m",
+                    attendanceHistory != null &&
+                            attendanceHistory!["total_hours_worked"] != null
+                        ? "${attendanceHistory!["total_hours_worked"]}h"
+                        : "0h",
                     valueColor: Colors.black,
                   ),
                 ),
                 SizedBox(width: w * 0.03),
                 Expanded(
-                  child: statsBox("Overtime", "2h 15m", valueColor: Colors.red),
+                  child: statsBox(
+                    "Overtime",
+                    attendanceHistory != null &&
+                            attendanceHistory!["overtime"] != null
+                        ? attendanceHistory!["overtime"].toString()
+                        : "0h 00m",
+                    valueColor: Colors.red,
+                  ),
                 ),
               ],
             )
@@ -1689,12 +1827,23 @@ class AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: monthlyStatBox("Day Worked", "22")),
+                    Expanded(
+                      child: monthlyStatBox(
+                        "Day Worked",
+                        attendanceHistory != null &&
+                                attendanceHistory!["total_records"] != null
+                            ? attendanceHistory!["total_records"].toString()
+                            : "0",
+                      ),
+                    ),
                     SizedBox(width: w * 0.03),
                     Expanded(
                       child: monthlyStatBox(
                         "Leave Taken",
-                        "2",
+                        attendanceHistory != null &&
+                                attendanceHistory!["leave_taken"] != null
+                            ? attendanceHistory!["leave_taken"].toString()
+                            : "0",
                         highlight: true,
                       ),
                     ),
@@ -1703,12 +1852,23 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 SizedBox(height: h * 0.02),
                 Row(
                   children: [
-                    Expanded(child: monthlyStatBox("LOP", "2")),
+                    Expanded(
+                      child: monthlyStatBox(
+                        "LOP",
+                        attendanceHistory != null &&
+                                attendanceHistory!["lop"] != null
+                            ? attendanceHistory!["lop"].toString()
+                            : "0",
+                      ),
+                    ),
                     SizedBox(width: w * 0.03),
                     Expanded(
                       child: monthlyStatBox(
                         "Overtime",
-                        "2h 15m",
+                        attendanceHistory != null &&
+                                attendanceHistory!["monthly_overtime"] != null
+                            ? attendanceHistory!["monthly_overtime"].toString()
+                            : "0h 00m",
                         highlight: true,
                       ),
                     ),
@@ -1719,38 +1879,51 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           SizedBox(height: h * 0.02),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text(
+            children: [
+              const Text(
                 "Attendance Progress",
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               Text(
-                "4/6 days",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                "${(progress * 100).toStringAsFixed(0)}%",
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
           SizedBox(height: h * 0.01),
-          Image.asset(
-            "assets/attendance_progress.png",
-            width: double.infinity,
-            fit: BoxFit.contain,
+          // Using LinearProgressIndicator instead of Image if preferable, but user has Image asset
+          // Assuming user might want accurate visual representation, let's keep image or replace?
+          // The user said "oluga data show aagala" (data not showing properly).
+          // Maybe they mean the TEXT? "4/6 days" and "80%" were hardcoded.
+          // Let's replace the text values correctly.
+          // And maybe use a real progress bar if the image is static.
+          // I'll add a LinearProgressIndicator below or replace the image if permitted.
+          // Given the prompt "fix pannu" (fix it), replacing static image with dynamic indicator is better.
+          LinearProgressIndicator(
+            value: progress,
+            backgroundColor: Colors.grey[300],
+            color: teal,
+            minHeight: 10,
+            borderRadius: BorderRadius.circular(5),
           ),
           SizedBox(height: h * 0.01),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
+            children: [
               Text(
-                "This week",
-                style: TextStyle(
+                "This Month",
+                style: const TextStyle(
                   fontSize: 12,
                   color: Colors.black,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Text(
-                "80%",
-                style: TextStyle(
+                "$daysPresent/$totalWorkingDays days",
+                style: const TextStyle(
                   fontSize: 12,
                   color: Colors.black,
                   fontWeight: FontWeight.w500,

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async'; // Added
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,9 +26,12 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
   final TextEditingController inTimeController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
 
+  Timer? _timer;
+
   String selectedMode = 'Mode of work';
   bool isLoading = false;
   int? uid;
+  String? cid;
   String? deviceId;
   Position? currentPosition;
 
@@ -45,10 +49,20 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     inTimeController.dispose();
     locationController.dispose();
     _faceDetectorService.dispose();
     super.dispose();
+  }
+
+  void _updateTime() {
+    if (mounted) {
+      final now = DateTime.now();
+      setState(() {
+        inTimeController.text = DateFormat('hh:mm:ss a').format(now);
+      });
+    }
   }
 
   Future<void> _getDeviceId() async {
@@ -64,9 +78,11 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
   }
 
   Future<void> _fetchLocationAndTime() async {
-    // 1. Set Current Time
-    final now = DateTime.now();
-    inTimeController.text = DateFormat('hh:mm a').format(now);
+    // 1. Set Current Time and Start Timer for Live Update
+    _updateTime();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _updateTime();
+    });
 
     // 2. Fetch Location
     setState(() {
@@ -134,8 +150,9 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       uid = prefs.getInt('uid') ?? 4;
+      cid = prefs.getString('cid') ?? "21472147";
     });
-    debugPrint("AUTO LOADED UID (Check-In) => $uid");
+    debugPrint("AUTO LOADED UID: $uid, CID: $cid");
   }
 
   @override
@@ -175,9 +192,8 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
               _label('In Time'),
               _textField(
                 controller: inTimeController,
-                hint: 'Tap to select time',
+                hint: 'Current Time',
                 readOnly: true,
-                onTap: _pickTime,
                 prefixIcon: Icons.access_time_outlined,
               ),
               const SizedBox(height: 14),
@@ -271,13 +287,12 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
 
       request.fields.addAll({
         "type": "2046",
-        "cid": "21472147",
+        "cid": cid ?? "21472147",
         "uid": uid.toString(),
         "in_time": inTimeController.text,
         "loc": locationController.text,
         "wrk_mde": selectedMode,
         "device_id": deviceId ?? "unknown",
-        // "ld": "34", // Using provided dummy or distance if available
         "lt": currentPosition?.latitude.toString() ?? "0.0",
         "ln": currentPosition?.longitude.toString() ?? "0.0",
       });
@@ -353,21 +368,6 @@ class _CheckInVerificationScreenState extends State<CheckInVerificationScreen> {
       if (mounted) {
         setState(() => isLoading = false);
       }
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-
-    if (picked != null) {
-      final formattedTime =
-          "${picked.hour}:${picked.minute.toString().padLeft(2, '0')}";
-      setState(() {
-        inTimeController.text = formattedTime;
-      });
     }
   }
 

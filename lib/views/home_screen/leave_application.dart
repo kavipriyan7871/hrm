@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:dotted_border/dotted_border.dart';
 
 import 'leave_management.dart';
 import 'permission_form.dart';
@@ -153,6 +154,8 @@ class _LeaveFormState extends State<LeaveForm> {
   DateTime? toDate;
   String? reason;
   File? attachment;
+  final TextEditingController _fromDateController = TextEditingController();
+  final TextEditingController _toDateController = TextEditingController();
 
   List<String> leaveTypes = [];
   bool isLoading = false;
@@ -164,6 +167,13 @@ class _LeaveFormState extends State<LeaveForm> {
     super.initState();
     _loadEmployeeId();
     _fetchLeaveTypes();
+  }
+
+  @override
+  void dispose() {
+    _fromDateController.dispose();
+    _toDateController.dispose();
+    super.dispose();
   }
 
   /// 🔥 ONLY READ STORED EMPLOYEE ID
@@ -189,6 +199,8 @@ class _LeaveFormState extends State<LeaveForm> {
       },
     );
 
+    if (!mounted) return;
+
     final data = jsonDecode(res.body);
     if (data["error"] == false) {
       setState(() {
@@ -203,6 +215,7 @@ class _LeaveFormState extends State<LeaveForm> {
 
   Future<void> _pickAttachment() async {
     final result = await FilePicker.platform.pickFiles();
+    if (!mounted) return;
     if (result != null) {
       setState(() {
         attachment = File(result.files.single.path!);
@@ -244,6 +257,7 @@ class _LeaveFormState extends State<LeaveForm> {
       if (employeeTableId == null) {
         // Try fetch again or fail
         final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
         employeeTableId = prefs.getString("employee_table_id");
         if (employeeTableId == null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -272,12 +286,9 @@ class _LeaveFormState extends State<LeaveForm> {
         );
       }
 
-      debugPrint("LEAVE APPLY REQ: ${request.fields}");
-
       var streamedResponse = await request.send();
+      if (!mounted) return;
       var response = await http.Response.fromStream(streamedResponse);
-
-      debugPrint("LEAVE APPLY RES: ${response.body}");
 
       final data = jsonDecode(response.body);
 
@@ -293,6 +304,8 @@ class _LeaveFormState extends State<LeaveForm> {
 
           // Clear Form
           _formKey.currentState!.reset();
+          _fromDateController.clear();
+          _toDateController.clear();
           setState(() {
             leaveType = null;
             fromDate = null;
@@ -303,12 +316,14 @@ class _LeaveFormState extends State<LeaveForm> {
 
           // Navigate to Leave Management Screen
           Future.delayed(const Duration(seconds: 1), () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const LeaveManagementScreen(),
-              ),
-            );
+            if (mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const LeaveManagementScreen(),
+                ),
+              );
+            }
           });
         }
       } else {
@@ -322,7 +337,6 @@ class _LeaveFormState extends State<LeaveForm> {
         }
       }
     } catch (e) {
-      debugPrint("Leave Apply Error: $e");
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -343,138 +357,227 @@ class _LeaveFormState extends State<LeaveForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _title('Leave Type'),
+          _label('Leave Type'),
           DropdownButtonFormField<String>(
             value: leaveType,
+            hint: Text(
+              'Select Leave Type',
+              style: GoogleFonts.poppins(
+                color: Colors.grey.shade400,
+                fontSize: 14,
+              ),
+            ),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.black54),
+            decoration: _inputDecoration(),
             items: leaveTypes
-                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(e, style: GoogleFonts.poppins(fontSize: 14)),
+                  ),
+                )
                 .toList(),
             onChanged: (v) => setState(() => leaveType = v),
             validator: (v) => v == null ? 'Required' : null,
           ),
-          _datePicker('From Date', fromDate, true),
-          _datePicker('To Date', toDate, false),
-          _reasonBox(),
-          _attachmentBox(),
-          const SizedBox(height: 80),
-          Center(
-            child: SizedBox(
-              width: 325,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : _applyLeave,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xff26A69A),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+
+          const SizedBox(height: 16),
+          _label('From Date'),
+          _buildDatePicker(true),
+
+          const SizedBox(height: 16),
+          _label('To date'),
+          _buildDatePicker(false),
+
+          const SizedBox(height: 16),
+          _label('Reason'),
+          TextFormField(
+            maxLines: 4,
+            validator: (v) => v!.isEmpty ? 'Required' : null,
+            onChanged: (v) => reason = v,
+            style: GoogleFonts.poppins(fontSize: 14),
+            decoration: _inputDecoration().copyWith(hintText: 'Reason'),
+          ),
+
+          const SizedBox(height: 16),
+          _label('Attachments'),
+          _buildAttachmentBox(),
+
+          const SizedBox(height: 40),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: isLoading ? null : _applyLeave,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xff26A69A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  'Submit',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
+                elevation: 0,
               ),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Submit',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
           ),
+          const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  Widget _title(String t) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 8),
-    child: Text(
-      t,
-      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
-    ),
-  );
+  Widget _label(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: GoogleFonts.poppins(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
 
-  Widget _datePicker(String label, DateTime? date, bool isFrom) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _title(label),
-        InkWell(
-          onTap: () async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: DateTime.now(),
-              firstDate: DateTime(2020),
-              lastDate: DateTime(2030),
-            );
-            if (picked != null) {
-              setState(() {
-                isFrom ? fromDate = picked : toDate = picked;
-              });
+  Widget _buildDatePicker(bool isFrom) {
+    return TextFormField(
+      controller: isFrom ? _fromDateController : _toDateController,
+      readOnly: true,
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: DateTime.now(),
+          firstDate: DateTime(2020),
+          lastDate: DateTime(2030),
+        );
+        if (!mounted) return;
+        if (picked != null) {
+          setState(() {
+            final formatted = "${picked.day}-${picked.month}-${picked.year}";
+            if (isFrom) {
+              fromDate = picked;
+              _fromDateController.text = formatted;
+            } else {
+              toDate = picked;
+              _toDateController.text = formatted;
             }
-          },
-          child: Container(
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              date == null
-                  ? 'Select Date'
-                  : '${date.day}/${date.month}/${date.year}',
-            ),
+          });
+        }
+      },
+      style: GoogleFonts.poppins(fontSize: 14),
+      decoration: _inputDecoration().copyWith(
+        hintText: 'Select Date',
+        prefixIcon: const Icon(
+          Icons.calendar_today_outlined,
+          color: Color(0xff534f8c), // Indigo color for icon
+          size: 20,
+        ),
+      ),
+      validator: (v) => v!.isEmpty ? 'Required' : null,
+    );
+  }
+
+  InputDecoration _inputDecoration() {
+    return InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(
+          color: Color(0xff534F8C),
+        ), // Dark Blue/Purple Border
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xff534F8C)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xff26A69A), width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Colors.red),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentBox() {
+    return GestureDetector(
+      onTap: _pickAttachment,
+      child: DottedBorder(
+        color: const Color(0xff534F8C), // Matches border color
+        strokeWidth: 1,
+        dashPattern: const [6, 4],
+        borderType: BorderType.RRect,
+        radius: const Radius.circular(12),
+        child: Container(
+          width: double.infinity,
+          height: 140,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _reasonBox() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _title('Reason'),
-        TextFormField(
-          maxLines: 3,
-          validator: (v) => v!.isEmpty ? 'Required' : null,
-          onChanged: (v) => reason = v,
-          decoration: const InputDecoration(hintText: 'Reason'),
-        ),
-      ],
-    );
-  }
-
-  Widget _attachmentBox() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _title("Attachments"),
-        InkWell(
-          onTap: _pickAttachment,
-          child: Container(
-            height: 120,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.add, size: 40, color: Colors.grey),
-                const SizedBox(height: 8),
-                Text(
-                  attachment == null
-                      ? "Add Attachments"
-                      : attachment!.path.split('/').last,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (attachment != null)
+                Column(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      attachment!.path.split('/').last,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                )
+              else
+                Column(
+                  children: [
+                    const Icon(Icons.add, size: 48, color: Colors.grey),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Add Attachments",
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

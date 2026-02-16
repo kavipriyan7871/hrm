@@ -20,6 +20,12 @@ class PermissionForm extends StatefulWidget {
 
 class _PermissionFormState extends State<PermissionForm> {
   final _formKey = GlobalKey<FormState>();
+
+  // Controllers for displaying text in read-only fields
+  final TextEditingController _dateController = TextEditingController();
+  final TextEditingController _fromTimeController = TextEditingController();
+  final TextEditingController _toTimeController = TextEditingController();
+
   String? employeeName;
   String? employeeId;
   String? uid;
@@ -32,7 +38,6 @@ class _PermissionFormState extends State<PermissionForm> {
   String? reason;
 
   final List<String> permissionTypes = [
-    'Select Permission Type',
     'Medical Appointment',
     'Personal Work',
     'Family Emergency',
@@ -44,6 +49,14 @@ class _PermissionFormState extends State<PermissionForm> {
   void initState() {
     super.initState();
     _fetchUserData();
+  }
+
+  @override
+  void dispose() {
+    _dateController.dispose();
+    _fromTimeController.dispose();
+    _toTimeController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchUserData() async {
@@ -82,6 +95,9 @@ class _PermissionFormState extends State<PermissionForm> {
         ),
       );
       _formKey.currentState!.reset();
+      _dateController.clear();
+      _fromTimeController.clear();
+      _toTimeController.clear();
       setState(() {
         selectedDate = null;
         fromTime = null;
@@ -108,8 +124,12 @@ class _PermissionFormState extends State<PermissionForm> {
         );
       },
     );
+    if (!mounted) return;
     if (picked != null) {
-      setState(() => selectedDate = picked);
+      setState(() {
+        selectedDate = picked;
+        _dateController.text = "${picked.day}/${picked.month}/${picked.year}";
+      });
     }
   }
 
@@ -126,12 +146,15 @@ class _PermissionFormState extends State<PermissionForm> {
         );
       },
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
         if (isFrom) {
           fromTime = picked;
+          _fromTimeController.text = picked.format12Hour();
         } else {
           toTime = picked;
+          _toTimeController.text = picked.format12Hour();
         }
       });
     }
@@ -144,14 +167,12 @@ class _PermissionFormState extends State<PermissionForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Text(
-              'Request Permission',
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xff1A237E), // Dark blue text
-              ),
+          Text(
+            'Request Permission',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xff1A237E),
             ),
           ),
           const SizedBox(height: 20),
@@ -162,7 +183,7 @@ class _PermissionFormState extends State<PermissionForm> {
           DropdownButtonFormField<String>(
             value: permissionType,
             decoration: _inputDecoration('Select Permission Type'),
-            icon: const Icon(Icons.arrow_drop_down),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.black54),
             items: permissionTypes.map((type) {
               return DropdownMenuItem(
                 value: type,
@@ -170,36 +191,27 @@ class _PermissionFormState extends State<PermissionForm> {
               );
             }).toList(),
             onChanged: (val) => setState(() => permissionType = val),
-            validator: (val) => val == null || val == 'Select Permission Type'
-                ? 'Required'
-                : null,
+            validator: (val) => val == null ? 'Required' : null,
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Date
           _sectionTitle('Date'),
           const SizedBox(height: 8),
-          InkWell(
+          TextFormField(
+            controller: _dateController,
+            readOnly: true,
             onTap: () => _selectDate(context),
-            child: IgnorePointer(
-              child: TextFormField(
-                key: ValueKey(selectedDate),
-                decoration: _inputDecoration(
-                  '',
-                  icon: Icons.calendar_today_outlined,
-                ),
-                controller: TextEditingController(
-                  text: selectedDate == null
-                      ? ''
-                      : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}",
-                ),
-                style: GoogleFonts.poppins(fontSize: 14),
-              ),
+            style: GoogleFonts.poppins(fontSize: 14),
+            decoration: _inputDecoration(
+              'Select Date',
+              icon: Icons.calendar_today_outlined,
             ),
+            validator: (v) => v!.isEmpty ? 'Required' : null,
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Time Row
           Row(
@@ -210,21 +222,13 @@ class _PermissionFormState extends State<PermissionForm> {
                   children: [
                     _sectionTitle('From Time'),
                     const SizedBox(height: 8),
-                    InkWell(
+                    TextFormField(
+                      controller: _fromTimeController,
+                      readOnly: true,
                       onTap: () => _selectTime(context, true),
-                      child: IgnorePointer(
-                        child: TextFormField(
-                          key: ValueKey(fromTime),
-                          decoration: _inputDecoration(
-                            '',
-                            icon: Icons.access_time,
-                          ),
-                          controller: TextEditingController(
-                            text: fromTime?.format12Hour() ?? '',
-                          ),
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
-                      ),
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      decoration: _inputDecoration('', icon: Icons.access_time),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
                   ],
                 ),
@@ -236,21 +240,13 @@ class _PermissionFormState extends State<PermissionForm> {
                   children: [
                     _sectionTitle('To Time'),
                     const SizedBox(height: 8),
-                    InkWell(
+                    TextFormField(
+                      controller: _toTimeController,
+                      readOnly: true,
                       onTap: () => _selectTime(context, false),
-                      child: IgnorePointer(
-                        child: TextFormField(
-                          key: ValueKey(toTime),
-                          decoration: _inputDecoration(
-                            '',
-                            icon: Icons.access_time,
-                          ),
-                          controller: TextEditingController(
-                            text: toTime?.format12Hour() ?? '',
-                          ),
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
-                      ),
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      decoration: _inputDecoration('', icon: Icons.access_time),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
                   ],
                 ),
@@ -258,46 +254,57 @@ class _PermissionFormState extends State<PermissionForm> {
             ],
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Reason
           _sectionTitle('Reason'),
           const SizedBox(height: 8),
           TextFormField(
-            maxLines: 3,
+            maxLines:
+                4, // Changed to 1 line to match LeaveForm or kept 3? Keep 3 but styled
             decoration: _inputDecoration('Enter Reason For Permission'),
             style: GoogleFonts.poppins(fontSize: 14),
             onChanged: (val) => reason = val,
             validator: (val) => val!.isEmpty ? 'Required' : null,
           ),
 
-          const SizedBox(height: 40),
+          const SizedBox(height: 60),
 
           // Submit Button
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton(
-              onPressed: isLoading ? null : _applyPermission,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xff26A69A),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+          Center(
+            child: SizedBox(
+              width: 325,
+              height: 55,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : _applyPermission,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xff26A69A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 0,
                 ),
-              ),
-              child: isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                      'Submit',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                child: isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        'Submit',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
+              ),
             ),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -308,7 +315,7 @@ class _PermissionFormState extends State<PermissionForm> {
       title,
       style: GoogleFonts.poppins(
         fontSize: 14,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
         color: Colors.black87,
       ),
     );
@@ -316,27 +323,30 @@ class _PermissionFormState extends State<PermissionForm> {
 
   InputDecoration _inputDecoration(String hint, {IconData? icon}) {
     return InputDecoration(
-      hintText: hint,
-      prefixIcon: icon != null
-          ? Icon(icon, color: const Color(0xff1A237E), size: 20)
-          : null,
-      hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade400),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide
-            .none, // Light grey border as per image check? No slightly grey
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xff26A69A), width: 1.5),
-      ),
       filled: true,
       fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      hintText: hint,
+      prefixIcon: icon != null
+          ? Icon(icon, color: const Color(0xff534F8C), size: 20)
+          : null,
+      hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xff534F8C)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xff534F8C)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xff26A69A), width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Colors.red),
+      ),
     );
   }
 }

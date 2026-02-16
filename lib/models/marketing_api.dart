@@ -104,4 +104,42 @@ class MarketingApi {
       return {"error": true, "error_msg": e.toString()};
     }
   }
+
+  // Fetch Marketing History (Type: 2062)
+  static Future<Map<String, dynamic>> fetchHistory({
+    required String uid,
+    required String cid,
+    required String lat,
+    required String lng,
+    required String deviceId,
+    String type = "2062",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        body: {
+          'cid': cid,
+          'uid': uid,
+          'type': type,
+          'lt': lat,
+          'ln': lng,
+          'device_id': deviceId,
+        },
+      );
+
+      print("Marketing History Response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          "error": true,
+          "error_msg": "Server error: ${response.statusCode}",
+        };
+      }
+    } catch (e) {
+      print("Marketing History Error: $e");
+      return {"error": true, "error_msg": e.toString()};
+    }
+  }
 }
