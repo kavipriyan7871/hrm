@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'marketing_checkout.dart'; // Restore this import
 import '../../models/marketing_api.dart';
 import '../../models/employee_api.dart';
+import '../../services/user_data_manager.dart';
 
 class MarketingScreen extends StatefulWidget {
   const MarketingScreen({super.key});
@@ -25,8 +25,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCheckInState();
-    _loadEmployeeDetails();
+    _loadCheckInState(); // Load cached data first for instant display
+    _loadEmployeeDetails(); // This will trigger API fetch for fresh data
   }
 
   Future<void> _loadEmployeeDetails() async {
@@ -40,11 +40,18 @@ class _MarketingScreenState extends State<MarketingScreen> {
         employeeTableId = storedId;
         _isEmpLoading = false;
       });
+      // Even if stored, try to refresh history
+      _fetchHistoryFromApi();
       return;
     }
 
     // If not found, fetch from API
-    final loginUid = (prefs.getInt('uid') ?? 0).toString();
+    // Robust UID retrieval
+    var uidRaw = prefs.get('uid');
+    String loginUid = "0";
+    if (uidRaw != null) {
+      loginUid = uidRaw.toString();
+    }
 
     // Trust loginUid as employeeTableId if valid
     if (loginUid != "0") {
@@ -87,12 +94,28 @@ class _MarketingScreenState extends State<MarketingScreen> {
   }
 
   Future<void> _fetchHistoryFromApi() async {
+    debugPrint("🌐 Fetching fresh marketing history from API/Database...");
+
     // Get saved location or use defaults
     final prefs = await SharedPreferences.getInstance();
     final lat = prefs.getDouble('lat')?.toString() ?? "145";
     final lng = prefs.getDouble('lng')?.toString() ?? "145";
-    final deviceId =
-        "12345"; // As per user request example (was 123456 in checkin)
+    final deviceId = "12345"; // As per user request
+
+    if (employeeTableId == null || employeeTableId == "0") {
+      debugPrint(
+        "⚠️ Employee ID not set ($employeeTableId), skipping history fetch",
+      );
+      // Try to load again if missed
+      if (mounted && (employeeTableId == null)) {
+        _loadEmployeeDetails();
+      }
+      return;
+    }
+
+    debugPrint(
+      "🔍 API Request Params: UID=$employeeTableId, Lat=$lat, Lng=$lng, Device=$deviceId",
+    );
 
     try {
       final res = await MarketingApi.fetchHistory(
@@ -104,14 +127,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
         type: "2062",
       );
 
-      print("Marketing History Full Response: $res");
-      print("Marketing History Raw Data: ${res["data"]}");
+      debugPrint("📡 Marketing History API Response: $res");
 
       if (res["error"] == false) {
         // "data" can be null or empty list
         List<dynamic> apiData = res["data"] ?? [];
+        debugPrint("📊 Data count: ${apiData.length}");
+
         if (apiData.isEmpty) {
           setState(() => history = []);
+          debugPrint("📭 No history data in database for this user");
           return;
         }
 
@@ -135,6 +160,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 // Fields from JSON
                 String clientName =
                     e["client_name"] ?? e["company"] ?? "Unknown Client";
+                String remarks = e["remarks"] ?? "No Remarks";
+                String date = e["date"] ?? "";
                 String checkIn = e["check_in_time"] ?? "00:00:00";
                 String? checkOut = e["check_out_time"]
                     ?.toString(); // Handle nullable
@@ -149,6 +176,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
 
                 return {
                   "company": clientName,
+                  "remarks": remarks,
+                  "date": date,
                   "time": timeDisplay,
                   "status": statusLocal,
                   "statusColor": color,
@@ -159,9 +188,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
 
           _saveHistory(history);
         });
+        debugPrint(
+          "✅ Loaded ${history.length} items from database and updated cache",
+        );
+      } else {
+        debugPrint(
+          "❌ API returned error: ${res['message'] ?? res['error_msg']}",
+        );
       }
     } catch (e) {
-      debugPrint("History Fetch Error: $e");
+      debugPrint("❌ History Fetch Error: $e");
     }
   }
 
@@ -170,13 +206,17 @@ class _MarketingScreenState extends State<MarketingScreen> {
     setState(() {
       isCheckedIn = prefs.getBool('is_marketing_checked_in') ?? false;
       checkInTime = prefs.getString('marketing_check_in_time') ?? "00.00.00";
+    });
 
-      // Load History
-      String? historyJson = prefs.getString('marketing_history');
-      if (historyJson != null) {
-        try {
-          List<dynamic> loaded = jsonDecode(historyJson);
-          history = loaded
+    // Load user-specific history from cache
+    debugPrint("📦 Loading cached marketing history...");
+    final historyList = await UserDataManager.getCurrentUserList(
+      'marketing_history',
+    );
+    if (historyList != null) {
+      try {
+        setState(() {
+          history = historyList
               .map((e) {
                 // Restore color which is not JSON serializable directly
                 Color color = e['status'] == 'Completed'
@@ -184,6 +224,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
                     : Colors.redAccent;
                 return {
                   "company": e["company"],
+                  "remarks": e["remarks"] ?? "No Remarks",
+                  "date": e["date"] ?? "",
                   "time": e["time"],
                   "status": e["status"],
                   "statusColor": color,
@@ -191,27 +233,33 @@ class _MarketingScreenState extends State<MarketingScreen> {
               })
               .toList()
               .cast<Map<String, dynamic>>();
-        } catch (e) {
-          history = [];
-        }
-      } else {
-        history = [];
+        });
+        debugPrint("✅ Loaded ${history.length} cached history items");
+      } catch (e) {
+        setState(() => history = []);
+        debugPrint("❌ Error loading cached history: $e");
       }
-    });
+    } else {
+      setState(() => history = []);
+      debugPrint("📭 No cached history found");
+    }
   }
 
   Future<void> _saveHistory(List<Map<String, dynamic>> newHistory) async {
-    final prefs = await SharedPreferences.getInstance();
     // Remove color objects before saving as they can't be JSON encoded
     List<Map<String, dynamic>> toSave = newHistory.map((e) {
       return {
         "company": e["company"],
+        "remarks": e["remarks"],
+        "date": e["date"],
         "time": e["time"],
         "status": e["status"],
         // "statusColor" will be re-assigned on load
       };
     }).toList();
-    await prefs.setString('marketing_history', jsonEncode(toSave));
+
+    // Save to user-specific storage
+    await UserDataManager.saveCurrentUserList('marketing_history', toSave);
   }
 
   Future<void> _performCheckIn() async {
@@ -599,7 +647,6 @@ class _MarketingScreenState extends State<MarketingScreen> {
                   isCheckedIn = false;
                   // checkInTime = "00.00.00"; // Optional: keep or reset
                   checkOutTime = currentCheckOutTime;
-                  checkOutTime = currentCheckOutTime;
 
                   _saveHistory(history);
                 });
@@ -678,6 +725,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
             (item) => _historyCard(
               context,
               company: item["company"],
+              remarks: item["remarks"] ?? "No Remarks",
+              date: item["date"] ?? "",
               time: item["time"],
               status: item["status"],
               statusColor: item["statusColor"],
@@ -716,6 +765,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
   Widget _historyCard(
     BuildContext context, {
     required String company,
+    required String remarks,
+    required String date,
     required String time,
     required String status,
     required Color statusColor,
@@ -737,6 +788,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
       child: _buildHistoryItem(
         context: context,
         company: company,
+        remarks: remarks,
+        date: date,
         time: _formatTime12Hour(time),
         status: status,
         statusColor: statusColor,
@@ -747,6 +800,8 @@ class _MarketingScreenState extends State<MarketingScreen> {
   Widget _buildHistoryItem({
     required BuildContext context,
     required String company,
+    required String remarks,
+    required String date,
     required String time,
     required String status,
     required Color statusColor,
@@ -788,6 +843,26 @@ class _MarketingScreenState extends State<MarketingScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              // Remarks
+              SizedBox(height: isTablet ? 6 : 4),
+              Text(
+                remarks,
+                style: GoogleFonts.poppins(
+                  fontSize: isTablet ? 14 : 12,
+                  color: Colors.black87,
+                ),
+              ),
+              // Date
+              SizedBox(height: isTablet ? 6 : 4),
+              Text(
+                date,
+                style: GoogleFonts.poppins(
+                  fontSize: isTablet ? 14 : 12,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              // Time
               SizedBox(height: isTablet ? 6 : 4),
               Text(
                 time,

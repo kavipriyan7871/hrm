@@ -61,7 +61,10 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   int? currentBreakId; // Store break_id from API response
 
   Map<String, dynamic>? attendanceHistory;
+
   bool isHistoryLoading = false;
+  String leaveTakenStr = "0"; // To store total leave taken count
+  String lopTakenStr = "0"; // To store LOP count
 
   @override
   void initState() {
@@ -70,6 +73,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     _loadEmployeeData();
     _getDeviceId().then((_) {
       _fetchAttendanceSummary();
+      _fetchLeaveStatistics(); // Calling Leave API separately for accurate stats
     });
   }
 
@@ -322,6 +326,187 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           isHistoryLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _fetchLeaveStatistics() async {
+    try {
+      final currentPos =
+          await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          ).onError((error, stackTrace) {
+            return Position(
+              longitude: 0,
+              latitude: 0,
+              timestamp: DateTime.now(),
+              accuracy: 0,
+              altitude: 0,
+              heading: 0,
+              speed: 0,
+              speedAccuracy: 0,
+              altitudeAccuracy: 0,
+              headingAccuracy: 0,
+            );
+          });
+
+      final body = {
+        "type": "2052", // Call Leave History (2052) instead of Summary (2051)
+        "cid": cid,
+        "uid": uid.toString(),
+        "id": uid.toString(), // Some APIs need 'id' too
+        "device_id": deviceId ?? "123456",
+        "lt": currentPos.latitude.toString(),
+        "ln": currentPos.longitude.toString(),
+      };
+
+      debugPrint("LEAVE STATISTICS REQUEST => $body");
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: body,
+      );
+
+      debugPrint("LEAVE STATISTICS RESPONSE => ${response.body}");
+      final data = jsonDecode(response.body);
+
+      if (data["error"] == false || data["error"] == "false") {
+        List<dynamic> historyList = [];
+
+        // Try to get leave_applications
+        if (data['leave_applications'] != null &&
+            data['leave_applications'] is List) {
+          historyList = data['leave_applications'];
+        } else if (data['data'] != null &&
+            data['data'] is Map &&
+            data['data']['leave_applications'] != null) {
+          historyList = data['data']['leave_applications'];
+        }
+
+        double totalTaken = 0;
+        double lopTaken = 0;
+
+        // 1. Build Allowance Map from Summary for Max Days
+        Map<String, double> allowanceMap = {};
+        List<dynamic> summaryList = [];
+        if (data['leave_summary'] != null && data['leave_summary'] is List) {
+          summaryList = data['leave_summary'];
+          for (var item in summaryList) {
+            String name = (item['leave_type_name'] ?? item['leave_type'] ?? "")
+                .toString()
+                .toLowerCase()
+                .trim();
+            double max =
+                double.tryParse(item['max_days_per_year']?.toString() ?? "0") ??
+                0;
+            allowanceMap[name] = max;
+          }
+        }
+
+        // 2. Data Source Logic
+        if (historyList.isNotEmpty) {
+          // Accumulate Taken by Type first
+          Map<String, double> takenMap = {};
+          for (var item in historyList) {
+            String typeName =
+                (item['leave_type_name'] ?? item['leave_type'] ?? "")
+                    .toString()
+                    .toLowerCase()
+                    .trim();
+            double taken =
+                double.tryParse(
+                  item['leave_taken']?.toString() ??
+                      item['days']?.toString() ??
+                      "0",
+                ) ??
+                0;
+
+            // Simplify status check if needed, currently assuming all history is relevant
+            takenMap[typeName] = (takenMap[typeName] ?? 0) + taken;
+          }
+
+          // Calculate LOP vs Paid based on allowance
+          takenMap.forEach((typeName, taken) {
+            bool isExplicitLop =
+                typeName.contains("loss of pay") ||
+                typeName.contains("lop") ||
+                typeName.contains("unpaid") ||
+                typeName.contains("without pay");
+
+            if (isExplicitLop) {
+              lopTaken += taken;
+            } else {
+              double allowance = allowanceMap[typeName] ?? -1;
+
+              // If allowance is defined (>=0), check for excess
+              if (allowance >= 0) {
+                if (taken > allowance) {
+                  lopTaken += (taken - allowance);
+                  totalTaken += allowance;
+                } else {
+                  totalTaken += taken;
+                }
+              } else {
+                // No allowance info found, assume Paid (or User preference?)
+                // Defaulting to Paid to avoid showing massive LOP if config missing
+                totalTaken += taken;
+              }
+            }
+          });
+        } else {
+          // Fallback to Summary logic if History is empty
+          for (var item in summaryList) {
+            String typeName =
+                (item['leave_type_name'] ?? item['leave_type'] ?? "")
+                    .toString()
+                    .toLowerCase()
+                    .trim();
+
+            double taken =
+                double.tryParse(
+                  item['leaves_taken_this_year']?.toString() ?? "0",
+                ) ??
+                0;
+            double allowance =
+                double.tryParse(item['max_days_per_year']?.toString() ?? "0") ??
+                0;
+
+            bool isExplicitLop =
+                typeName.contains("loss of pay") ||
+                typeName.contains("lop") ||
+                typeName.contains("unpaid") ||
+                typeName.contains("without pay");
+
+            if (isExplicitLop) {
+              lopTaken += taken;
+            } else {
+              if (taken > allowance) {
+                lopTaken += (taken - allowance);
+                totalTaken += allowance;
+              } else {
+                totalTaken += taken;
+              }
+            }
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            // Using logic: display integers if whole numbers
+            leaveTakenStr = totalTaken == totalTaken.toInt()
+                ? totalTaken.toInt().toString()
+                : totalTaken.toString();
+            lopTakenStr = lopTaken == lopTaken.toInt()
+                ? lopTaken.toInt().toString()
+                : lopTaken.toString();
+
+            debugPrint("--- LEAVE STATISTICS DEBUG ---");
+            debugPrint("Total Leave Taken (Calculated): $leaveTakenStr");
+            debugPrint("LOP Taken (Calculated): $lopTakenStr");
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching leave statistics: $e");
     }
   }
 
@@ -1840,10 +2025,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                     Expanded(
                       child: monthlyStatBox(
                         "Leave Taken",
-                        attendanceHistory != null &&
-                                attendanceHistory!["leave_taken"] != null
-                            ? attendanceHistory!["leave_taken"].toString()
-                            : "0",
+                        leaveTakenStr,
                         highlight: true,
                       ),
                     ),
@@ -1852,15 +2034,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 SizedBox(height: h * 0.02),
                 Row(
                   children: [
-                    Expanded(
-                      child: monthlyStatBox(
-                        "LOP",
-                        attendanceHistory != null &&
-                                attendanceHistory!["lop"] != null
-                            ? attendanceHistory!["lop"].toString()
-                            : "0",
-                      ),
-                    ),
+                    Expanded(child: monthlyStatBox("LOP", lopTakenStr)),
                     SizedBox(width: w * 0.03),
                     Expanded(
                       child: monthlyStatBox(

@@ -9,9 +9,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hrm/models/payroll_api.dart';
-import 'package:hrm/views/widgets/profile_card.dart';
-import '../main_root.dart';
 
+import '../main_root.dart';
 
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({super.key});
@@ -26,7 +25,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic>? _payrollData;
-  Map<String, dynamic>? _fullResponse; // To store employee name/code
+
   Map<String, dynamic>? _requestParams; // For debugging
 
   // Month and Year selection
@@ -105,7 +104,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
       if (response["error"] == false) {
         setState(() {
-          _fullResponse = response;
           _payrollData = response["data"];
           _isLoading = false;
         });
@@ -299,20 +297,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Profile Card
-                      if (_fullResponse != null &&
-                          (_fullResponse!['employee_name'] != null ||
-                              _fullResponse!['employee_code'] != null)) ...[
-                        ProfileInfoCard(
-                          name: _fullResponse!['employee_name'] ?? "Unknown",
-                          employeeId: _fullResponse!['employee_code'] ?? "N/A",
-                          designation: "Employee", // Default fallback
-                          profileImagePath:
-                              'assets/profile.png', // Fallback image
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
                       // Teal Container with 4 White Cards
                       Container(
                         width: double.infinity,
@@ -537,24 +521,26 @@ class _PayrollScreenState extends State<PayrollScreen> {
                       const SizedBox(height: 30),
 
                       // Action Buttons
-                      Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          _buildActionButton(
-                            "Download",
-                            Icons.download,
-                            tealColor,
-                            _downloadPDF,
-                          ),
-                          _buildActionButton(
-                            "Share",
-                            Icons.share,
-                            tealColor,
-                            _sharePDF,
-                          ),
-                        ],
+                      Center(
+                        child: Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            _buildActionButton(
+                              "Download",
+                              Icons.download,
+                              tealColor,
+                              _downloadPDF,
+                            ),
+                            _buildActionButton(
+                              "Share",
+                              Icons.share,
+                              tealColor,
+                              _sharePDF,
+                            ),
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 40),

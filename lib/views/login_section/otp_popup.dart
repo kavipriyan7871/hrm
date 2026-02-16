@@ -21,12 +21,8 @@ class OtpBottomSheet extends StatefulWidget {
 }
 
 class _OtpBottomSheetState extends State<OtpBottomSheet> {
-  final List<TextEditingController> controllers = List.generate(
-    6,
-    (_) => TextEditingController(),
-  );
-
-  final List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
+  final TextEditingController _otpController = TextEditingController();
+  final FocusNode _otpFocusNode = FocusNode();
 
   bool isLoading = false;
   Timer? _timer;
@@ -62,12 +58,8 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
   @override
   void dispose() {
     _timer?.cancel();
-    for (var c in controllers) {
-      c.dispose();
-    }
-    for (var f in focusNodes) {
-      f.dispose();
-    }
+    _otpController.dispose();
+    _otpFocusNode.dispose();
     super.dispose();
   }
 
@@ -155,15 +147,51 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
               SizedBox(height: height * 0.03),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(
-                  6,
-                  (index) => _otpBox(
-                    index,
-                    width * 0.12,
-                    height * 0.065,
-                    width * 0.045,
+              Center(
+                child: SizedBox(
+                  height: height * 0.065,
+                  width: width,
+                  child: Stack(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(6, (index) {
+                          return _buildOtpDigitBox(
+                            index,
+                            width * 0.12,
+                            height * 0.065,
+                            width * 0.045,
+                          );
+                        }),
+                      ),
+                      Positioned.fill(
+                        child: TextField(
+                          controller: _otpController,
+                          focusNode: _otpFocusNode,
+                          keyboardType: TextInputType.number,
+                          maxLength: 6,
+                          autofocus: true,
+                          showCursor: false,
+                          enableInteractiveSelection: false,
+                          autofillHints: const [AutofillHints.oneTimeCode],
+                          style: const TextStyle(color: Colors.transparent),
+                          decoration: const InputDecoration(
+                            counterText: "",
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            fillColor: Colors.transparent,
+                            filled: true,
+                          ),
+                          onChanged: (value) {
+                            setState(() {});
+                            if (value.length == 6) {
+                              _verifyOtpApi();
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -234,47 +262,48 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
     );
   }
 
-  Widget _otpBox(int index, double width, double height, double fontSize) {
-    return SizedBox(
+  Widget _buildOtpDigitBox(
+    int index,
+    double width,
+    double height,
+    double fontSize,
+  ) {
+    String text = "";
+    if (_otpController.text.length > index) {
+      text = _otpController.text[index];
+    }
+
+    final bool isFocused = index == _otpController.text.length;
+    final bool isFilled = index < _otpController.text.length;
+
+    return Container(
       width: width,
       height: height,
-      child: TextField(
-        controller: controllers[index],
-        focusNode: focusNodes[index],
-        keyboardType: TextInputType.number,
-        textAlign: TextAlign.center,
-        maxLength: 1,
-        style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold),
-        decoration: InputDecoration(
-          counterText: "",
-          contentPadding: EdgeInsets.zero,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF26A69A)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF26A69A), width: 2),
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF26A69A)),
-          ),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isFocused || isFilled
+              ? const Color(0xFF26A69A)
+              : Colors.grey.shade400,
+          width: isFocused ? 2 : 1,
         ),
-        onChanged: (value) {
-          if (value.isNotEmpty && index < 5) {
-            focusNodes[index + 1].requestFocus();
-          } else if (value.isEmpty && index > 0) {
-            focusNodes[index - 1].requestFocus();
-          }
-        },
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
       ),
     );
   }
 
   /// ✅ VERIFY OTP API – DEBUG PRINTS ADDED
   Future<void> _verifyOtpApi() async {
-    String otp = controllers.map((e) => e.text).join();
+    String otp = _otpController.text;
 
     if (otp.length != 6) {
       _snack("Enter valid OTP", false);

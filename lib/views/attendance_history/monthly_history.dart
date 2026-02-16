@@ -628,6 +628,8 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: _previousMonth,
         ),
         const SizedBox(width: 12),
@@ -641,6 +643,8 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
         /// NEXT MONTH
         IconButton(
           icon: const Icon(Icons.chevron_right),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: _nextMonth,
         ),
       ],

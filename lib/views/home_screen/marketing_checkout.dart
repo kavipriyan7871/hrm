@@ -252,7 +252,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (_attachments != null && await _attachments!.exists()) {
         request.files.add(
-          await http.MultipartFile.fromPath('attachments', _attachments!.path),
+          await http.MultipartFile.fromPath(
+            'attachments[]',
+            _attachments!.path,
+          ),
         );
       }
 

@@ -11,7 +11,10 @@ import 'package:intl/intl.dart';
 import 'monthly_history.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
-  const AttendanceHistoryScreen({super.key});
+  final String? leaveTaken;
+  final String? lopTaken;
+
+  const AttendanceHistoryScreen({super.key, this.leaveTaken, this.lopTaken});
 
   @override
   State<AttendanceHistoryScreen> createState() =>
