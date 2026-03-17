@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hrm/views/home/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hrm/views/widgets/user_avatar.dart';
 
 class AccountSettingsApp extends StatelessWidget {
   const AccountSettingsApp({super.key});
@@ -94,13 +95,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    CircleAvatar(
+                    UserAvatar(
                       radius: 60,
-                      backgroundImage: profilePhoto.isNotEmpty
-                          ? NetworkImage(profilePhoto)
-                          : const AssetImage("assets/profile.png")
-                                as ImageProvider,
-                      backgroundColor: Colors.grey[300],
+                      profileImageUrl: profilePhoto,
+                      userName: name,
                     ),
                     const SizedBox(height: 16),
                     const Text(

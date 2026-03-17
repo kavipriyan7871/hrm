@@ -3,8 +3,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/login_api.dart';
-import '../../models/employee_api.dart';
+
 import '../main_root.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 
 class OtpBottomSheet extends StatefulWidget {
   final String phoneNumber;
@@ -20,7 +21,7 @@ class OtpBottomSheet extends StatefulWidget {
   State<OtpBottomSheet> createState() => _OtpBottomSheetState();
 }
 
-class _OtpBottomSheetState extends State<OtpBottomSheet> {
+class _OtpBottomSheetState extends State<OtpBottomSheet> with CodeAutoFill {
   final TextEditingController _otpController = TextEditingController();
   final FocusNode _otpFocusNode = FocusNode();
 
@@ -30,8 +31,19 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
   bool _canResend = false;
 
   @override
+  void codeUpdated() {
+    setState(() {
+      _otpController.text = code ?? "";
+      if (_otpController.text.length == 6) {
+        _verifyOtpApi();
+      }
+    });
+  }
+
+  @override
   void initState() {
     super.initState();
+    listenForCode();
     startTimer();
   }
 
@@ -57,6 +69,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
   @override
   void dispose() {
+    cancel();
     _timer?.cancel();
     _otpController.dispose();
     _otpFocusNode.dispose();
@@ -314,18 +327,21 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lat = prefs.getDouble('lat')?.toString() ?? "145";
-      final lng = prefs.getDouble('lng')?.toString() ?? "145";
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final deviceId = prefs.getString('device_id') ?? "";
+      final cid = prefs.getString('cid') ?? "";
+      final appSignature = prefs.getString('app_signature') ?? "";
 
       final response = await LoginApi.verifyOtp(
         mobile: widget.phoneNumber,
         otp: otp,
-        cid: "21472147",
+        cid: cid,
         type: "2001",
-        deviceId: "12345",
+        deviceId: deviceId,
         lat: lat,
         lng: lng,
-        appSignature: "smart123",
+        appSignature: appSignature,
       );
 
       /// 🔍 DEBUG – FULL RESPONSE
@@ -352,67 +368,37 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
         }
 
         // If not found in data, check root level
-        if (employeeId == null) {
-          employeeId =
-              (response["uid"] ?? response["id"] ?? response["user_id"])
-                  ?.toString();
-        }
+        employeeId ??=
+            (response["uid"] ?? response["id"] ?? response["user_id"])
+                ?.toString();
 
         employeeId ??= widget.cusId;
-
-        // --- NEW LOGIC START: Fetch from EmployeeApi to get the "correct" UID ---
-        try {
-          if (employeeId != null) {
-            debugPrint(
-              "Fetching EmployeeDetails to confirm UID for: $employeeId",
-            );
-            final empRes = await EmployeeApi.getEmployeeDetails(
-              uid: employeeId,
-              cid: "21472147",
-              deviceId: "123456",
-              lat: lat,
-              lng: lng,
-            );
-
-            debugPrint("OTP Employee Fetch Response: $empRes");
-
-            if (empRes["error"] == false) {
-              final empData = empRes["data"] ?? empRes;
-              String? apiUid =
-                  (empData["uid"] ?? empData["id"] ?? empData["user_id"])
-                      ?.toString();
-
-              if (apiUid != null && apiUid.isNotEmpty) {
-                debugPrint(
-                  "Updating UID from EmployeeApi: $employeeId -> $apiUid",
-                );
-                employeeId = apiUid;
-              }
-
-              // Also update name from this authoritative source if available
-              if (empData["name"] != null) {
-                await prefs.setString("name", empData["name"].toString());
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint("Error fetching employee details in OTP popup: $e");
-        }
-        // --- NEW LOGIC END ---
 
         /// 🔍 DEBUG – BEFORE STORE
         debugPrint("EMPLOYEE ID BEFORE STORE => $employeeId");
 
-        if (employeeId != null && employeeId.isNotEmpty) {
+        // Save Token
+        final String? token = response["token"]?.toString();
+        if (token != null && token.isNotEmpty) {
+          await prefs.setString("token", token);
+          debugPrint("PREF token saved => $token");
+        }
+
+        if (employeeId.isNotEmpty) {
           await prefs.setString("employee_table_id", employeeId);
           await prefs.setInt("uid", int.tryParse(employeeId) ?? 0);
-          await prefs.setString("cid", "21472147");
+          await prefs.setString("cid", cid);
+          await prefs.setString(
+            "mobile",
+            widget.phoneNumber,
+          ); // Persist mobile for Chat
 
           /// 🔍 DEBUG – AFTER STORE
           debugPrint(
             "PREF employee_table_id => ${prefs.getString("employee_table_id")}",
           );
           debugPrint("PREF uid => ${prefs.getInt("uid")}");
+          debugPrint("PREF mobile => ${prefs.getString("mobile")}");
         }
 
         _snack("OTP verified successfully", true);
@@ -441,17 +427,18 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lat = prefs.getDouble('lat')?.toString() ?? "145";
-      final lng = prefs.getDouble('lng')?.toString() ?? "145";
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final deviceId = prefs.getString('device_id') ?? "";
+      final appSignature = prefs.getString('app_signature') ?? "";
 
       final response = await LoginApi.sendOtp(
         mobile: widget.phoneNumber,
-        cid: "21472147",
         type: "2000",
-        deviceId: "12345",
+        deviceId: deviceId,
         lat: lat,
         lng: lng,
-        appSignature: "smart123",
+        appSignature: appSignature,
       );
 
       debugPrint("RESEND OTP RESPONSE => $response");
@@ -464,6 +451,7 @@ class _OtpBottomSheetState extends State<OtpBottomSheet> {
 
       if (isSuccess) {
         _snack("OTP Resent Successfully", true);
+        listenForCode();
         startTimer();
       } else {
         _snack("Failed to resend OTP", false);

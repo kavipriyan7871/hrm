@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -33,7 +33,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   late DateTime endOfWeek;
 
   // API Params
-  String cid = "21472147";
+  String cid = "";
   int uid = 0;
   String? deviceId;
   String userName = "User";
@@ -56,7 +56,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   Future<void> _loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      cid = prefs.getString('cid') ?? "21472147";
+      cid = prefs.getString('cid') ?? "";
       uid = prefs.getInt('uid') ?? 0;
       userName = prefs.getString('name') ?? "User";
       isCheckedIn = prefs.getBool('isCheckedIn') ?? false;
@@ -87,8 +87,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     try {
       Position? position;
       try {
-        position = await Geolocator.getCurrentPosition(
+        position = await Geolocator.getLastKnownPosition();
+        position ??= await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 3),
         );
       } catch (e) {
         debugPrint("Location error: $e");
@@ -104,7 +106,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         "type": "2064",
         "cid": cid,
         "uid": uid.toString(),
-        "device_id": deviceId ?? "unknown",
+        "device_id": deviceId ?? "123456",
         "lt": position?.latitude.toString() ?? "0.0",
         "ln": position?.longitude.toString() ?? "0.0",
         "month": startOfWeek.month.toString(),
@@ -114,10 +116,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
       debugPrint("Weekly Request: $body");
 
-      final response = await http.post(
-        Uri.parse("https://erpsmart.in/total/api/m_api/"),
-        body: body,
-      );
+      final response = await http
+          .post(Uri.parse("https://erpsmart.in/total/api/m_api/"), body: body)
+          .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body);
       if (data["error"] == false || data["error"] == "false") {
@@ -146,7 +147,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       border: Border.all(color: const Color(0xffEFEFEF), width: 1.5),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.04),
+          color: Colors.black.withValues(alpha: 0.04),
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
@@ -161,7 +162,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     final teal = const Color(0xff00A79D);
 
     String dateRange =
-        "${DateFormat('MMM d').format(startOfWeek)} – ${DateFormat('MMM d, y').format(endOfWeek)}";
+        "${DateFormat('MMM d').format(startOfWeek)} â€“ ${DateFormat('MMM d, y').format(endOfWeek)}";
 
     // Calculate Weekly Progress locally based on attendanceList
     // Get records within this week range
@@ -176,8 +177,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       if (rd == null) return false;
       // Check range
       if (rd.isBefore(startOfWeek) ||
-          rd.isAfter(endOfWeek.add(const Duration(days: 1))))
+          rd.isAfter(endOfWeek.add(const Duration(days: 1)))) {
         return false;
+      }
 
       String status = record["status"]?.toString().toLowerCase() ?? "";
       return status.contains("present") || status.contains("check out");
@@ -423,9 +425,12 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         // Filter records for this week locally just in case
                         DateTime? recordDate;
                         try {
-                          if (dateStr.isNotEmpty)
+                          if (dateStr.isNotEmpty) {
                             recordDate = DateTime.parse(dateStr);
-                        } catch (e) {}
+                          }
+                        } catch (e) {
+                          debugPrint("Error parsing date: $e");
+                        }
 
                         if (recordDate != null) {
                           // Check range
@@ -630,7 +635,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.15),
+                          color: statusColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -672,7 +677,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        "⏱ Overtime: $overtime",
+                        "⏱️ Overtime: $overtime",
                         style: const TextStyle(
                           color: Colors.deepOrange,
                           fontSize: 12,

@@ -29,11 +29,13 @@ class TicketApi {
 
       final body = {
         "type": "2050",
-        "cid": prefs.getString("cid") ?? "21472147",
+        "cid": prefs.getString("cid") ?? "",
         "uid": uid,
-        "device_id": "123456",
+        "device_id": prefs.getString('device_id') ?? "",
         "lt": (prefs.getDouble('lat') ?? 145).toString(),
         "ln": (prefs.getDouble('lng') ?? 145).toString(),
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("DEPT API BODY => $body");
@@ -83,11 +85,13 @@ class TicketApi {
 
       final body = {
         "type": "2058",
-        "cid": prefs.getString("cid") ?? "21472147",
-        "device_id": "123456",
+        "cid": prefs.getString("cid") ?? "",
+        "device_id": prefs.getString('device_id') ?? "",
         "uid": uid,
         "lt": "3232", // Explicitly requested by user: 3232
         "ln": "332", // Explicitly requested by user: 332
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("VIEW TICKETS BODY => $body");
@@ -142,7 +146,7 @@ class TicketApi {
         debugPrint("UID RETRIEVAL ERROR => $e");
       }
 
-      final String cid = prefs.getString("cid") ?? "21472147";
+      final String cid = prefs.getString("cid") ?? "";
 
       final body = {
         "type": "2049",
@@ -150,10 +154,12 @@ class TicketApi {
         "department": department,
         "description": description,
         "cid": cid,
-        "device_id": "123456",
+        "device_id": prefs.getString('device_id') ?? "",
         "ln": (prefs.getDouble('lng') ?? 145).toString(),
         "lt": (prefs.getDouble('lat') ?? 145).toString(),
         "uid": uid,
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("RAISE TICKET BODY => $body");

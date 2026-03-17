@@ -1,9 +1,7 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hrm/models/expense_api.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'add_expense.dart';
@@ -23,7 +21,6 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
 
   DateTime _selectedDate = DateTime.now();
   String _selectedFilter = 'Total';
-
   bool _isDateFilterActive = false;
 
   @override
@@ -42,13 +39,13 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF26A69A), // Header background color
-              onPrimary: Colors.white, // Header text color
-              onSurface: Colors.black, // Body text color
+              primary: Color(0xFF26A69A),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF26A69A), // Button text color
+                foregroundColor: const Color(0xFF26A69A),
               ),
             ),
           ),
@@ -57,14 +54,13 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
       },
     );
     if (picked != null) {
-      // Check if the month/year changed to decide if we need to refetch
       bool needsFetch =
           picked.month != _selectedDate.month ||
           picked.year != _selectedDate.year;
 
       setState(() {
         _selectedDate = picked;
-        _isDateFilterActive = true; // Activate date filter strictly
+        _isDateFilterActive = true;
       });
 
       if (needsFetch) {
@@ -73,27 +69,152 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
     }
   }
 
+  Future<void> _selectMonth(BuildContext context) async {
+    DateTime tempDate = _selectedDate;
+
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 18),
+                    onPressed: () => setStateDialog(
+                      () => tempDate = DateTime(
+                        tempDate.year - 1,
+                        tempDate.month,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    "${tempDate.year}",
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_forward_ios, size: 18),
+                    onPressed: () => setStateDialog(
+                      () => tempDate = DateTime(
+                        tempDate.year + 1,
+                        tempDate.month,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 300,
+                height: 250,
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 1.8,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                  ),
+                  itemCount: 12,
+                  itemBuilder: (context, index) {
+                    final monthIndex = index + 1;
+                    final isSelected =
+                        tempDate.year == _selectedDate.year &&
+                        monthIndex == _selectedDate.month;
+                    return InkWell(
+                      onTap: () => Navigator.pop(
+                        context,
+                        DateTime(tempDate.year, monthIndex),
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF26A69A)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF26A69A)
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Text(
+                          [
+                            "Jan",
+                            "Feb",
+                            "Mar",
+                            "Apr",
+                            "May",
+                            "Jun",
+                            "Jul",
+                            "Aug",
+                            "Sep",
+                            "Oct",
+                            "Nov",
+                            "Dec",
+                          ][index],
+                          style: GoogleFonts.poppins(
+                            color: isSelected ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((picked) {
+      if (picked != null && picked is DateTime) {
+        if (picked.month != _selectedDate.month ||
+            picked.year != _selectedDate.year) {
+          setState(() {
+            _selectedDate = picked;
+            _expenses = []; // Clear current list
+            _isLoading = true;
+            _isDateFilterActive = false; // Reset to Month View
+          });
+          _fetchExpenses();
+        }
+      }
+    });
+  }
+
   Future<Position?> _determinePosition() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        return null;
-      }
+      if (!serviceEnabled) return null;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          return null;
-        }
+        if (permission == LocationPermission.denied) return null;
       }
 
-      if (permission == LocationPermission.deniedForever) {
-        return null;
-      }
+      if (permission == LocationPermission.deniedForever) return null;
 
-      return await Geolocator.getCurrentPosition();
+      // Try last known first (instant)
+      Position? lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) return lastKnown;
+
+      // Fast current position (low accuracy, short timeout)
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 3),
+      );
     } catch (e) {
+      print("Location Fetch Error: $e");
       return null;
     }
   }
@@ -111,21 +232,9 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
           prefs.getString('employee_table_id') ??
           prefs.getInt('uid')?.toString() ??
           "";
-      final cid = prefs.getString('cid') ?? "21472147";
+      final cid = prefs.getString('cid') ?? "";
 
-      String? deviceId = prefs.getString('device_id');
-      if (deviceId == null) {
-        final deviceInfo = DeviceInfoPlugin();
-        if (Platform.isAndroid) {
-          final androidInfo = await deviceInfo.androidInfo;
-          deviceId = androidInfo.id;
-        } else if (Platform.isIOS) {
-          final iosInfo = await deviceInfo.iosInfo;
-          deviceId = iosInfo.identifierForVendor;
-        } else {
-          deviceId = "unknown_device";
-        }
-      }
+      final deviceId = prefs.getString('device_id') ?? "123456";
 
       final position = await _determinePosition();
       final lat = position?.latitude.toString() ?? "0.0";
@@ -136,12 +245,10 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
         uid: uid,
         month: _selectedDate.month.toString().padLeft(2, '0'),
         year: _selectedDate.year.toString(),
-        deviceId: deviceId!,
+        deviceId: deviceId,
         lat: lat,
         lng: lng,
       );
-
-      print("Get Expenses UI Response: $response");
 
       if (!mounted) return;
 
@@ -189,7 +296,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
     final isTablet = width > 600;
     final horizontalPadding = isTablet ? 24.0 : 16.0;
 
-    // 1. Filter by Date if Active
+    // 1. Apply Date Filter if Active
     List<dynamic> dateFilteredList = _expenses;
     if (_isDateFilterActive) {
       String targetDate =
@@ -250,41 +357,65 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
         actions: [
           IconButton(
             onPressed: () => _selectDate(context),
-            icon: const Icon(Icons.calendar_month),
+            icon: const Icon(Icons.calendar_today, size: 20),
+            tooltip: "Filter by Date",
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Row(
-              children: [
-                Center(
-                  child: Text(
-                    _isDateFilterActive
-                        ? "${_selectedDate.day.toString().padLeft(2, '0')}/${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.year}"
-                        : "${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.year}",
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                if (_isDateFilterActive)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.close,
+          InkWell(
+            onTap: () => _selectMonth(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 8.0,
+              ),
+              child: Row(
+                children: [
+                  if (!_isDateFilterActive) ...[
+                    const Icon(
+                      Icons.calendar_month,
                       color: Colors.white,
                       size: 20,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _isDateFilterActive = false;
-                      });
-                    },
-                    tooltip: "Clear Date Filter",
-                  ),
-              ],
+                    const SizedBox(width: 8),
+                    Text(
+                      "${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][_selectedDate.month - 1]} ${_selectedDate.year}",
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      "${_selectedDate.day.toString().padLeft(2, '0')}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.year}",
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isDateFilterActive = false;
+                        });
+                      },
+                      tooltip: "Clear Date Filter",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
+          const SizedBox(width: 8),
         ],
         title: Text(
           "Expense Management",
@@ -342,21 +473,6 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                 child: Column(
                   children: [
                     const SizedBox(height: 16),
-                    if (_isDateFilterActive)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            "Showing results for: ${_selectedDate.day}-${_selectedDate.month}-${_selectedDate.year}",
-                            style: GoogleFonts.poppins(
-                              color: Colors.grey[700],
-                              fontSize: 14,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                      ),
 
                     // ==================== SUMMARY CARDS ====================
                     Row(
@@ -367,7 +483,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 setState(() => _selectedFilter = 'Total'),
                             child: _buildSummaryCard(
                               "Total",
-                              "₹ ${currentSummary['total']}",
+                              "\u20B9 ${currentSummary['total']}",
                               const Color(0xFF3F51B5), // Blue
                               _selectedFilter == 'Total',
                             ),
@@ -380,7 +496,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 setState(() => _selectedFilter = 'Approved'),
                             child: _buildSummaryCard(
                               "Approved",
-                              "₹ ${currentSummary['approved']}",
+                              "\u20B9 ${currentSummary['approved']}",
                               const Color(0xFF4CAF50), // Green
                               _selectedFilter == 'Approved',
                             ),
@@ -393,7 +509,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 setState(() => _selectedFilter = 'Pending'),
                             child: _buildSummaryCard(
                               "Pending",
-                              "₹ ${currentSummary['pending']}",
+                              "\u20B9 ${currentSummary['pending']}",
                               const Color(0xFFFF9800), // Orange
                               _selectedFilter == 'Pending',
                             ),
@@ -436,7 +552,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                           String amountStr = item['amount']?.toString() ?? "0";
                           // Remove commas if present
                           String val = amountStr.replaceAll(",", "");
-                          String amount = "₹ $val";
+                          String amount = "\u20B9 $val";
 
                           String dateStr =
                               item["expense_date"]?.toString() ?? "";
@@ -549,7 +665,9 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
     // If not selected, use standard Dark Blue (0xFF1A237E) or Grey.
 
     final color = isSelected ? activeColor : const Color(0xFF1A237E);
-    final bgColor = isSelected ? activeColor.withOpacity(0.05) : Colors.white;
+    final bgColor = isSelected
+        ? activeColor.withValues(alpha: 0.05)
+        : Colors.white;
 
     return Container(
       height: 100, // Fixed height for uniformity

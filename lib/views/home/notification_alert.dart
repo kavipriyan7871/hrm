@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 void main() => runApp(const MaterialApp(home: NotificationSettingsScreen()));
@@ -137,7 +137,7 @@ class _NotificationSettingsScreenState
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -159,7 +159,7 @@ class _NotificationSettingsScreenState
             child: Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: Colors.white,
+              activeThumbColor: Colors.white,
               activeTrackColor: const Color(0xff6750A4),
               inactiveThumbColor: const Color(0xFF79747E),
               inactiveTrackColor: const Color(0xFFE1DDF1),

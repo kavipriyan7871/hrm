@@ -6,11 +6,15 @@ import 'package:hrm/views/home_screen/performance.dart';
 import 'package:hrm/views/home_screen/reports.dart';
 
 import 'leave_management.dart';
+import 'marketing_screen.dart';
 import 'marketing_checkin.dart';
+import 'tasks_list.dart';
 import 'notification.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import '../chat/chat.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -21,12 +25,16 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   String userName = "User";
+  double _monthlyRate = 0; // Completion rate for the current month
+
+  // State for Assigned Tasks
 
   @override
   void initState() {
     super.initState();
     _loadEmployeeName();
     _fetchLeaveSummary();
+    _fetchMonthlyPerformance();
   }
 
   // Helper structure to hold leave balance data
@@ -34,6 +42,7 @@ class _DashboardState extends State<Dashboard> {
     {"type": "Casual", "taken": 0, "total": 12, "balance": "12/12"},
     {"type": "Sick", "taken": 0, "total": 12, "balance": "12/12"},
     {"type": "Earned", "taken": 0, "total": 12, "balance": "12/12"},
+    {"type": "Unpaid", "taken": 0, "total": null, "balance": "0/-"},
   ];
 
   Future<void> _fetchLeaveSummary() async {
@@ -46,8 +55,8 @@ class _DashboardState extends State<Dashboard> {
       final response = await http.post(
         Uri.parse("https://erpsmart.in/total/api/m_api/"),
         body: {
-          "cid": "21472147",
-          "device_id": "123456",
+          "cid": prefs.getString('cid') ?? "",
+          "device_id": prefs.getString('device_id') ?? "",
           "lt": lat,
           "ln": lng,
           "type": "2051",
@@ -78,13 +87,15 @@ class _DashboardState extends State<Dashboard> {
                               "")
                           .toString()
                           .toLowerCase();
-                  if (staticType == "earned")
+                  if (staticType == "earned") {
                     return apiType.contains("privilege") ||
                         apiType.contains("earned");
+                  }
                   if (staticType == "casual") return apiType.contains("casual");
-                  if (staticType == "sick")
+                  if (staticType == "sick") {
                     return apiType.contains("medical") ||
                         apiType.contains("sick");
+                  }
                   return apiType.contains(staticType);
                 }, orElse: () => null);
 
@@ -131,8 +142,8 @@ class _DashboardState extends State<Dashboard> {
       final response = await http.post(
         Uri.parse("https://erpsmart.in/total/api/m_api/"),
         body: {
-          "cid": "21472147",
-          "device_id": "123456",
+          "cid": prefs.getString('cid') ?? "",
+          "device_id": prefs.getString('device_id') ?? "",
           "lt": lat,
           "ln": lng,
           "type": "2052",
@@ -171,19 +182,54 @@ class _DashboardState extends State<Dashboard> {
             }
 
             for (var h in fetchedList) {
-              String status = (h['status'] ?? "0").toString();
-              if (status == "2" || status.toLowerCase().contains("reject"))
+              String status = (h['status'] ?? "0").toString().toLowerCase();
+              // ✅ Only count APPROVED leaves in taken count
+              bool isApproved =
+                  status == "1" ||
+                  status.contains("approv") ||
+                  status.contains("accept");
+              if (!isApproved) continue;
+
+              // Check if it's unpaid/LOP
+              String leaveTypeLower = (h['leave_type'] ?? h['reason'] ?? "")
+                  .toString()
+                  .toLowerCase();
+              bool isLop =
+                  leaveTypeLower.contains("unpaid") ||
+                  leaveTypeLower.contains("lop") ||
+                  leaveTypeLower.contains("loss of pay") ||
+                  leaveTypeLower.contains("without pay");
+              if (isLop) {
+                num lopDays = 0;
+                if (h['no_of_days'] != null) {
+                  lopDays = num.tryParse(h['no_of_days'].toString()) ?? 0;
+                } else if (h['total_days'] != null) {
+                  lopDays = num.tryParse(h['total_days'].toString()) ?? 0;
+                } else if (h['days'] != null) {
+                  lopDays = num.tryParse(h['days'].toString()) ?? 0;
+                } else {
+                  lopDays = 1;
+                }
+                var unpaidItem = leaveBalanceData.firstWhere(
+                  (b) => b['type'] == 'Unpaid',
+                  orElse: () => <String, dynamic>{},
+                );
+                if (unpaidItem.isNotEmpty) {
+                  unpaidItem['taken'] = (unpaidItem['taken'] as num) + lopDays;
+                }
                 continue;
+              }
 
               num days = 0;
-              if (h['no_of_days'] != null)
+              if (h['no_of_days'] != null) {
                 days = num.tryParse(h['no_of_days'].toString()) ?? 0;
-              else if (h['total_days'] != null)
+              } else if (h['total_days'] != null) {
                 days = num.tryParse(h['total_days'].toString()) ?? 0;
-              else if (h['days'] != null)
+              } else if (h['days'] != null) {
                 days = num.tryParse(h['days'].toString()) ?? 0;
-              else
+              } else {
                 days = 1;
+              }
 
               String type = (h['leave_type'] ?? h['reason'] ?? "")
                   .toString()
@@ -192,14 +238,15 @@ class _DashboardState extends State<Dashboard> {
               for (var b in leaveBalanceData) {
                 String bType = b['type'].toString().toLowerCase();
                 bool match = false;
-                if (bType == "earned")
+                if (bType == "earned") {
                   match = type.contains("privilege") || type.contains("earned");
-                else if (bType == "casual")
+                } else if (bType == "casual") {
                   match = type.contains("casual");
-                else if (bType == "sick")
+                } else if (bType == "sick") {
                   match = type.contains("medical") || type.contains("sick");
-                else
+                } else {
                   match = type.contains(bType);
+                }
 
                 if (match) {
                   b['taken'] = (b['taken'] as num) + days;
@@ -219,6 +266,52 @@ class _DashboardState extends State<Dashboard> {
       }
     } catch (e) {
       debugPrint("Error fetching leave history: $e");
+    }
+  }
+
+  Future<void> _fetchMonthlyPerformance() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String cid = prefs.getString('cid') ?? "";
+      final String uid = (prefs.getInt('uid') ?? 0).toString();
+      final String deviceId = prefs.getString('device_id') ?? "";
+      final String lat = prefs.getDouble('lat')?.toString() ?? "145";
+      final String lng = prefs.getDouble('lng')?.toString() ?? "145";
+      final String? token = prefs.getString('token');
+
+      DateTime now = DateTime.now();
+      String fromDate = DateFormat('yyyy-MM-01').format(now);
+      String toDate = DateFormat(
+        'yyyy-MM-dd',
+      ).format(DateTime(now.year, now.month + 1, 0));
+
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: {
+          "type": "2075",
+          "cid": cid,
+          "uid": uid,
+          "device_id": deviceId,
+          "lt": lat,
+          "ln": lng,
+          "token": token ?? "",
+          "from_date": fromDate,
+          "to_date": toDate,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['error'] == false && data['summary'] != null) {
+          int total = data['summary']['total'] ?? 0;
+          int completed = data['summary']['completed'] ?? 0;
+          setState(() {
+            _monthlyRate = total == 0 ? 0 : (completed / total) * 100;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching monthly performance: $e");
     }
   }
 
@@ -269,6 +362,22 @@ class _DashboardState extends State<Dashboard> {
           ),
         ),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ChatProjectsScreen(),
+                ),
+              );
+            },
+            icon: Image.asset(
+              "assets/icons/announcement.png",
+              color: Colors.white,
+              width: isTablet ? 30 : 25,
+              height: isTablet ? 30 : 25,
+            ),
+          ),
           IconButton(
             onPressed: () {
               Navigator.push(
@@ -436,12 +545,32 @@ class _DashboardState extends State<Dashboard> {
             ),
 
             SizedBox(height: h * 0.02),
-            Text(
-              "Your Task",
-              style: GoogleFonts.poppins(
-                fontSize: isTablet ? 20 : 18,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Your Task",
+                  style: GoogleFonts.poppins(
+                    fontSize: isTablet ? 20 : 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const TasksListScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.arrow_circle_right_outlined,
+                    color: Color(0xFF26A69A),
+                    size: 28,
+                  ),
+                ),
+              ],
             ),
             SizedBox(height: h * 0.01),
             taskCard(),
@@ -627,30 +756,38 @@ class _DashboardState extends State<Dashboard> {
                   fontSize: 15,
                 ),
               ),
-              const Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Color(0xFF1B2C61),
-              ),
+              // const Icon(
+              //   Icons.arrow_forward_ios,
+              //   size: 16,
+              //   color: Color(0xFF1B2C61),
+              // ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            "92%",
+            "${_monthlyRate.toStringAsFixed(0)}%",
             style: GoogleFonts.poppins(
               fontSize: 32,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 12),
-          Image.asset(
-            "assets/progress_bar.png",
-            width: double.infinity,
-            fit: BoxFit.contain,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return _buildDashboardProgressBar(
+                progress: _monthlyRate / 100,
+                color: const Color(0xFF26A69A),
+                width: constraints.maxWidth,
+              );
+            },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Text(
-            "Allmost all assigned tasks completed on time",
+            _monthlyRate >= 80
+                ? "Excellent performance! Keep it up!"
+                : (_monthlyRate >= 50
+                      ? "Good progress, keep pushing!"
+                      : "Tasks need more focus this month."),
             style: GoogleFonts.poppins(
               fontSize: 12,
               color: Colors.black,
@@ -693,18 +830,86 @@ class _DashboardState extends State<Dashboard> {
             ],
           ),
           const SizedBox(height: 16),
-          Image.asset(
-            "assets/progress_bar.png",
-            width: double.infinity,
-            fit: BoxFit.contain,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return _buildDashboardProgressBar(
+                progress: _monthlyRate / 100,
+                color: const Color(0xffEC6E2D),
+                width: constraints.maxWidth,
+              );
+            },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Text(
-            "90% Completed",
+            "${_monthlyRate.toStringAsFixed(0)}% Completed",
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: const Color(0xffEC6E2D),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardProgressBar({
+    required double progress,
+    required Color color,
+    required double width,
+  }) {
+    const double barHeight = 10;
+    const double iconSize = 24;
+
+    return SizedBox(
+      height: iconSize,
+      width: width,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.centerLeft,
+        children: [
+          Container(
+            height: barHeight,
+            width: width,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(barHeight / 2),
+            ),
+          ),
+          Container(
+            height: barHeight,
+            width: width * (progress > 1 ? 1 : (progress < 0 ? 0 : progress)),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(barHeight / 2),
+            ),
+          ),
+          Positioned(
+            left:
+                (width * (progress > 1 ? 1 : (progress < 0 ? 0 : progress))) -
+                (iconSize / 2),
+            child: Container(
+              width: iconSize,
+              height: iconSize,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: color, width: 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.local_fire_department,
+                  size: 14,
+                  color: color,
+                ),
+              ),
             ),
           ),
         ],
@@ -728,25 +933,53 @@ class _DashboardState extends State<Dashboard> {
       ),
       child: Column(
         children: leaveBalanceData
-            .where((item) => item['type'] == 'Casual' || item['type'] == 'Sick')
+            .where(
+              (item) =>
+                  item['type'] == 'Casual' ||
+                  item['type'] == 'Sick' ||
+                  item['type'] == 'Unpaid',
+            )
             .map((item) {
-              String displayType = item['type'] == "Sick"
-                  ? "Medical Leave"
-                  : "${item['type']} Leave";
-              String asset =
-                  "assets/casual_leave.png"; // Default to casual icon
-              // If you have a medical icon, use it here, e.g.
-              // if (item['type'] == "Sick") asset = "assets/medical_leave.png";
+              String displayType;
+              String asset = "assets/casual_leave.png";
+              if (item['type'] == "Sick") {
+                displayType = "Medical Leave";
+              } else if (item['type'] == "Unpaid") {
+                displayType = "Unpaid Leave (LOP)";
+              } else {
+                displayType = "${item['type']} Leave";
+              }
+
+              num taken = item['taken'] as num;
+              String balanceLine;
+              if (item['type'] == 'Unpaid') {
+                balanceLine = "LOP Days: $taken";
+              } else {
+                num total = item['total'] as num? ?? 12;
+                num bal = (total - taken).clamp(0, total);
+                balanceLine = "Balance: $bal / $total Days";
+              }
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 20.0),
                 child: Row(
                   children: [
-                    Image.asset(asset, height: 60, width: 60),
+                    Image.asset(
+                      asset,
+                      height: 60,
+                      width: 60,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.event_busy,
+                        size: 48,
+                        color: Color(0xFF26A69A),
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Text(
-                      "$displayType:\nTaken: ${item['taken']} Day\nBalance: ${item['total'] - item['taken']} Days",
-                      style: GoogleFonts.poppins(fontSize: 13),
+                    Expanded(
+                      child: Text(
+                        "$displayType:\nTaken: $taken Day\n$balanceLine",
+                        style: GoogleFonts.poppins(fontSize: 13),
+                      ),
                     ),
                   ],
                 ),

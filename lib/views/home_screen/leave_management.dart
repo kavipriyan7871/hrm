@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hrm/views/main_root.dart';
 
@@ -21,6 +21,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
   List<dynamic> historyData = [];
   bool isLoading = false;
   bool isBalanceLoading = false;
+  int? _selectedMonth; // Null means All/Annual
 
   // Static list structure matching original design
   List<Map<String, dynamic>> leaveBalanceData = [
@@ -79,6 +80,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
   }
 
   Future<void> _fetchLeaveSummary() async {
+    if (!mounted) return;
     setState(() => isBalanceLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -86,20 +88,20 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
       final lat = prefs.getDouble('lat')?.toString() ?? "145";
       final lng = prefs.getDouble('lng')?.toString() ?? "145";
 
-      final response = await http.post(
-        Uri.parse("https://erpsmart.in/total/api/m_api/"),
-        body: {
-          "cid": "21472147",
-          "device_id": "123456",
-          "lt": lat,
-          "ln": lng,
-          "type": "2051",
-          "uid": uid.toString(),
-          "id": uid.toString(),
-        },
-      );
-
-      debugPrint("LEAVE SUMMARY RESPONSE (2051): ${response.body}");
+      final response = await http
+          .post(
+            Uri.parse("https://erpsmart.in/total/api/m_api/"),
+            body: {
+              "cid": prefs.getString('cid') ?? "",
+              "device_id": prefs.getString('device_id') ?? "",
+              "lt": lat,
+              "ln": lng,
+              "type": "2051",
+              "uid": uid.toString(),
+              "id": uid.toString(),
+            },
+          )
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -117,6 +119,7 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
             apiList = data['data']['leave_summary'];
           }
 
+          if (!mounted) return;
           setState(() {
             // Iterate through our static list and update values if API has matching type
             for (var staticItem in leaveBalanceData) {
@@ -180,11 +183,12 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
     } catch (e) {
       debugPrint("Error fetching leave summary: $e");
     } finally {
-      setState(() => isBalanceLoading = false);
+      if (mounted) setState(() => isBalanceLoading = false);
     }
   }
 
   Future<void> _fetchLeaveHistory() async {
+    if (!mounted) return;
     setState(() => isLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -193,20 +197,20 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
       final lat = prefs.getDouble('lat')?.toString() ?? "145";
       final lng = prefs.getDouble('lng')?.toString() ?? "145";
 
-      final response = await http.post(
-        Uri.parse("https://erpsmart.in/total/api/m_api/"),
-        body: {
-          "cid": "21472147",
-          "device_id": "123456",
-          "lt": lat,
-          "ln": lng,
-          "type": "2052",
-          "uid": uid.toString(),
-          "id": uid.toString(),
-        },
-      );
-
-      debugPrint("LEAVE HISTORY RESPONSE: ${response.body}");
+      final response = await http
+          .post(
+            Uri.parse("https://erpsmart.in/total/api/m_api/"),
+            body: {
+              "cid": prefs.getString('cid') ?? "",
+              "device_id": prefs.getString('device_id') ?? "",
+              "lt": lat,
+              "ln": lng,
+              "type": "2052",
+              "uid": uid.toString(),
+              "id": uid.toString(),
+            },
+          )
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -281,76 +285,250 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
           }).toList();
         }
 
-        // --- Calculate Taken & Balance from History (Manual Count) ---
-
-        // 1. Reset 'taken' count locally (keep 'total' from API/Static)
-        for (var b in leaveBalanceData) {
-          b['taken'] = 0;
-        }
-
-        // 2. Iterate history and sum up
-        for (var h in fetchedList) {
-          // Skip Rejected
-          String status = (h['status'] ?? "0").toString();
-          if (status == "2" || status.toLowerCase().contains("reject")) {
-            continue;
-          }
-
-          // Get Days
-          num days = 0;
-          if (h['no_of_days'] != null) {
-            days = num.tryParse(h['no_of_days'].toString()) ?? 0;
-          } else if (h['total_days'] != null) {
-            days = num.tryParse(h['total_days'].toString()) ?? 0;
-          } else if (h['days'] != null) {
-            days = num.tryParse(h['days'].toString()) ?? 0;
-          } else {
-            // Unspecified duration: assume 1 day? Or try date parse if safe.
-            // For safety, defaulting to 1 if no field found, or 0?
-            // Often if days is missing it might be 1.
-            days = 1;
-          }
-
-          // Get Type
-          String type = (h['leave_type'] ?? h['reason'] ?? "")
-              .toString()
-              .toLowerCase();
-
-          // Match and Add
-          for (var b in leaveBalanceData) {
-            String bType = b['type'].toString().toLowerCase();
-            bool match = false;
-
-            if (bType == "earned") {
-              match = type.contains("privilege") || type.contains("earned");
-            } else if (bType == "casual") {
-              match = type.contains("casual");
-            } else if (bType == "sick") {
-              match = type.contains("medical") || type.contains("sick");
-            } else {
-              match = type.contains(bType);
-            }
-
-            if (match) {
-              b['taken'] = (b['taken'] as num) + days;
-              break;
-            }
-          }
-        }
-
-        // 3. Update Balance Strings
-        for (var b in leaveBalanceData) {
-          num total = b['total'] ?? 12; // Default if null
-          num taken = b['taken'];
-          b['balance'] = "${total - taken}/$total";
-        }
-
-        setState(() => historyData = fetchedList);
+        historyData = fetchedList;
+        _calculateBalances();
       }
     } catch (e) {
       debugPrint("Error fetching leave history: $e");
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  void _calculateBalances_Old() {
+    for (var b in leaveBalanceData) {
+      b['taken'] = 0;
+    }
+    for (var h in historyData) {
+      // âœ… Only count APPROVED leaves in balance/taken
+      String status = (h['status'] ?? "0").toString().toLowerCase();
+      bool isApproved =
+          status == "1" ||
+          status.contains("approv") ||
+          status.contains("accept");
+      if (!isApproved) continue;
+
+      // --- Date Filter Logic ---
+      if (_selectedMonth != null) {
+        try {
+          // Parse date. Format usually YYYY-MM-DD
+          String dateStr =
+              (h['leave_start_date'] ?? h['date'] ?? h['f_date'] ?? "")
+                  .toString();
+          if (dateStr.isEmpty) continue;
+
+          DateTime? date = DateTime.tryParse(dateStr);
+          if (date != null) {
+            if (date.month != _selectedMonth) continue;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Get Days
+      num days = 0;
+      if (h['no_of_days'] != null) {
+        days = num.tryParse(h['no_of_days'].toString()) ?? 0;
+      } else if (h['total_days'] != null) {
+        days = num.tryParse(h['total_days'].toString()) ?? 0;
+      } else if (h['days'] != null) {
+        days = num.tryParse(h['days'].toString()) ?? 0;
+      } else {
+        days = 1;
+      }
+
+      // Get Type
+      String type = (h['leave_type'] ?? h['reason'] ?? "")
+          .toString()
+          .toLowerCase();
+
+      // Match and Add
+      for (var b in leaveBalanceData) {
+        String bType = b['type'].toString().toLowerCase();
+        bool match = false;
+
+        if (bType == "earned") {
+          match = type.contains("privilege") || type.contains("earned");
+        } else if (bType == "casual") {
+          match = type.contains("casual");
+        } else if (bType == "sick") {
+          match = type.contains("medical") || type.contains("sick");
+        } else {
+          match = type.contains(bType);
+        }
+
+        if (match) {
+          b['taken'] = (b['taken'] as num) + days;
+          break;
+        }
+      }
+    }
+
+    // 3. Update Balance Strings
+    for (var b in leaveBalanceData) {
+      num taken = b['taken'];
+      String bType = b['type'].toString().toLowerCase();
+      if (bType == "unpaid") {
+        b['balance'] = "$taken/-";
+      } else {
+        num total = b['total'] ?? 12; // Default if null
+        b['balance'] = "${total - taken}/$total";
+      }
+    }
+
+    setState(() {});
+  }
+
+  void _calculateBalances() {
+    // 1. Reset 'taken' count locally (keep 'total' from API/Static)
+    for (var b in leaveBalanceData) {
+      b['taken'] = 0;
+    }
+
+    // Map of Month -> List of Leaves
+    Map<int, List<Map<String, dynamic>>> monthlyLeaves = {};
+
+    for (var h in historyData) {
+      String status = (h['status'] ?? "0").toString().toLowerCase();
+
+      // âœ… Strictly only count "accept" or "approved" leaves in balance cards
+      bool isApproved =
+          status == "1" || status == "accept" || status.contains("approv");
+      if (!isApproved) continue;
+
+      DateTime? date;
+      try {
+        String dateStr =
+            (h['leave_start_date'] ?? h['date'] ?? h['f_date'] ?? "")
+                .toString();
+        if (dateStr.isNotEmpty) date = DateTime.tryParse(dateStr);
+      } catch (e) {
+        /* ignore */
+      }
+
+      if (date == null) continue;
+
+      // âœ… Only count leaves for the current year in the annual summary
+      int currentYear = DateTime.now().year;
+      if (date.year != currentYear) continue;
+
+      if (_selectedMonth != null && date.month != _selectedMonth) continue;
+
+      num days = 0;
+      if (h['no_of_days'] != null) {
+        days = num.tryParse(h['no_of_days'].toString()) ?? 0;
+      } else if (h['total_days'] != null) {
+        days = num.tryParse(h['total_days'].toString()) ?? 0;
+      } else if (h['days'] != null) {
+        days = num.tryParse(h['days'].toString()) ?? 0;
+      } else {
+        days = 1;
+      }
+
+      String type = (h['leave_type'] ?? h['reason'] ?? "")
+          .toString()
+          .toLowerCase();
+
+      if (!monthlyLeaves.containsKey(date.month)) {
+        monthlyLeaves[date.month] = [];
+      }
+      monthlyLeaves[date.month]!.add({'type': type, 'days': days});
+    }
+
+    // Apply Rules Per Month
+    monthlyLeaves.forEach((month, leaves) {
+      num monthlyTotalPaid = 0;
+      num monthlyUnpaidDirect = 0;
+      List<Map<String, dynamic>> paidLeavesList = [];
+
+      for (var leave in leaves) {
+        String type = leave['type'];
+        num days = leave['days'];
+
+        if (type.contains("unpaid") ||
+            type.contains("loss") ||
+            type.contains("lop") ||
+            type.contains("without pay")) {
+          monthlyUnpaidDirect += days;
+        } else {
+          monthlyTotalPaid += days;
+          paidLeavesList.add(leave);
+        }
+      }
+
+      num allowed = 2; // Limit per user requirement
+      num excess = 0;
+      if (monthlyTotalPaid > allowed) {
+        excess = monthlyTotalPaid - allowed;
+      }
+
+      _addToBalance("unpaid", monthlyUnpaidDirect + excess);
+
+      num remainingQuota = allowed;
+      for (var leave in paidLeavesList) {
+        String type = leave['type'];
+        num days = leave['days'];
+        num daysToAttribute = 0;
+
+        if (remainingQuota > 0) {
+          if (remainingQuota >= days) {
+            daysToAttribute = days;
+            remainingQuota -= days;
+          } else {
+            daysToAttribute = remainingQuota;
+            remainingQuota = 0;
+          }
+        }
+
+        if (daysToAttribute > 0) _addToBalance(type, daysToAttribute);
+      }
+    });
+
+    // 3. Update Balance Strings
+    for (var b in leaveBalanceData) {
+      num taken = b['taken'];
+      String bType = b['type'].toString().toLowerCase();
+      if (bType == "unpaid") {
+        b['balance'] = "$taken/-";
+      } else {
+        num total = b['total'] ?? 12; // Default if null
+        b['balance'] = "${total - taken}/$total";
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _addToBalance(String apiType, num days) {
+    for (var b in leaveBalanceData) {
+      String bType = b['type'].toString().toLowerCase();
+      bool match = false;
+      if (bType == "earned") {
+        match =
+            apiType.contains("privilege") ||
+            apiType.contains("earned") ||
+            apiType.contains(" el") ||
+            apiType.contains("annual") ||
+            apiType.contains(" al");
+      } else if (bType == "casual") {
+        match = apiType.contains("casual") || apiType.contains(" cl");
+      } else if (bType == "sick") {
+        match =
+            apiType.contains("medical") ||
+            apiType.contains("sick") ||
+            apiType.contains(" ml");
+      } else if (bType == "unpaid") {
+        match = apiType.contains("unpaid") || apiType.contains("lop");
+      } else {
+        match = apiType.contains(bType);
+      }
+
+      if (match) {
+        b['taken'] = (b['taken'] as num) + days;
+        break; // Add to first matching category
+      }
     }
   }
 
@@ -377,113 +555,217 @@ class _LeaveManagementScreenState extends State<LeaveManagementScreen> {
           style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w500),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // const ProfileSection(),
-            const SizedBox(height: 12),
+      body: Column(
+        children: [
+          const SizedBox(height: 12),
 
-            // TABS
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => selectedTab = 0),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          decoration: BoxDecoration(
+          // FIXED TABS
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => selectedTab = 0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: selectedTab == 0
+                              ? const Color(0xff26A69A)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(40),
+                        ),
+                        child: Text(
+                          "Leave Summary",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                             color: selectedTab == 0
-                                ? const Color(0xff26A69A)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(40),
-                          ),
-                          child: Text(
-                            "Leave Summary",
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: selectedTab == 0
-                                  ? Colors.white
-                                  : Colors.grey.shade700,
-                            ),
+                                ? Colors.white
+                                : Colors.grey.shade700,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => selectedTab = 1);
-                          // Always fetch history heavily to get summary updates too?
-                          // Or check if valid.
-                          if (historyData.isEmpty || true) {
-                            // Force update for summary sync
-                            _fetchLeaveHistory();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          decoration: BoxDecoration(
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => selectedTab = 1);
+                        if (historyData.isEmpty || true) {
+                          _fetchLeaveHistory();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: selectedTab == 1
+                              ? const Color(0xff26A69A)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(40),
+                        ),
+                        child: Text(
+                          "Leave History",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                             color: selectedTab == 1
-                                ? const Color(0xff26A69A)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(40),
-                          ),
-                          child: Text(
-                            "Leave History",
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: selectedTab == 1
-                                  ? Colors.white
-                                  : Colors.grey.shade700,
-                            ),
+                                ? Colors.white
+                                : Colors.grey.shade700,
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
+          ),
 
-            const SizedBox(height: 20),
+          const SizedBox(height: 10),
 
-            selectedTab == 0
-                ? isBalanceLoading
+          // SCROLLABLE BODY
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  selectedTab == 0
+                      ? isBalanceLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : Column(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 10,
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: PopupMenuButton<int>(
+                                        offset: const Offset(0, 40),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        onSelected: (int? value) {
+                                          setState(() {
+                                            _selectedMonth = value;
+                                          });
+                                          _calculateBalances();
+                                        },
+                                        itemBuilder: (context) {
+                                          const months = [
+                                            "January",
+                                            "February",
+                                            "March",
+                                            "April",
+                                            "May",
+                                            "June",
+                                            "July",
+                                            "August",
+                                            "September",
+                                            "October",
+                                            "November",
+                                            "December",
+                                          ];
+                                          return [
+                                            const PopupMenuItem(
+                                              value: null,
+                                              child: Text("All Months"),
+                                            ),
+                                            ...List.generate(12, (index) {
+                                              return PopupMenuItem(
+                                                value: index + 1,
+                                                child: Text(months[index]),
+                                              );
+                                            }),
+                                          ];
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xff26A69A),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.sort,
+                                                color: Colors.white,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                _selectedMonth == null
+                                                    ? "Sort by"
+                                                    : [
+                                                        "Jan",
+                                                        "Feb",
+                                                        "Mar",
+                                                        "Apr",
+                                                        "May",
+                                                        "Jun",
+                                                        "Jul",
+                                                        "Aug",
+                                                        "Sep",
+                                                        "Oct",
+                                                        "Nov",
+                                                        "Dec",
+                                                      ][_selectedMonth! - 1],
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  LeaveBalanceGrid(leaveData: leaveBalanceData),
+                                  const SizedBox(height: 24),
+                                  const HolidayListCard(),
+                                  const SizedBox(height: 24),
+                                ],
+                              )
+                      : isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : Column(
                           children: [
-                            LeaveBalanceGrid(leaveData: leaveBalanceData),
-                            const SizedBox(height: 40),
-                            const HolidayListCard(),
-                            const SizedBox(height: 40),
-                            const ApplyLeaveButton(),
-                            const SizedBox(height: 40),
+                            LeaveHistoryList(history: historyData),
+                            const SizedBox(height: 20),
                           ],
-                        )
-                : isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Column(
-                    children: [
-                      // Show Summary in History Tab
-                      LeaveHistoryList(history: historyData),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-          ],
-        ),
+                        ),
+                ],
+              ),
+            ),
+          ),
+
+          // FIXED BOTTOM BUTTON
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: ApplyLeaveButton(),
+          ),
+        ],
       ),
     );
   }
@@ -530,7 +812,7 @@ class LeaveBalanceGrid extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.grey.withOpacity(0.15),
+                    color: Colors.grey.withValues(alpha: 0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -631,12 +913,14 @@ class LeaveHistoryList extends StatelessWidget {
         Color statusBgColor = const Color(0xffFFF3E0);
 
         if (statusRaw == "1" ||
-            statusRaw.contains("accept") ||
+            statusRaw == "accept" ||
             statusRaw.contains("approv")) {
           status = "Approved";
           statusColor = const Color(0xff05D817);
           statusBgColor = const Color(0xffE8F5E8);
-        } else if (statusRaw == "2" || statusRaw.contains("reject")) {
+        } else if (statusRaw == "2" ||
+            statusRaw == "reject" ||
+            statusRaw.contains("reject")) {
           status = "Rejected";
           statusColor = Colors.red;
           statusBgColor = const Color(0xffFFEBEE);
@@ -650,7 +934,7 @@ class LeaveHistoryList extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: Colors.grey.withValues(alpha: 0.1),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),

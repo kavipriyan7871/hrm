@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hrm/views/widgets/user_avatar.dart';
 
 class ProfileInfoCard extends StatelessWidget {
   final String name;
@@ -18,18 +19,16 @@ class ProfileInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width:double.infinity,
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        border: Border.all(
-          color: Colors.black,
-        ),
+        border: Border.all(color: Colors.black),
         color: const Color(0xffEEEABC),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
+            color: Colors.grey.withValues(alpha: 0.2),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -37,11 +36,10 @@ class ProfileInfoCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
+          UserAvatar(
             radius: 34,
-            backgroundImage: AssetImage(profileImagePath!),
-            backgroundColor: Colors.transparent,
-            onBackgroundImageError: (_, __) {},
+            profileImageUrl: profileImagePath,
+            userName: name,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -80,3 +78,4 @@ class ProfileInfoCard extends StatelessWidget {
     );
   }
 }
+

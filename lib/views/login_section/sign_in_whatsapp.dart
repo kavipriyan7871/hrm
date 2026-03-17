@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:hrm/views/login_section/login_screen.dart';
-import 'package:hrm/views/login_section/sign-in_sms.dart';
-import 'package:hrm/views/login_section/sign-up.dart';
+import 'package:hrm/views/login_section/sign_in_sms.dart';
+import 'package:hrm/views/login_section/sign_up.dart';
 import '../../models/login_api.dart';
+import 'package:hrm/services/device_service.dart';
 import 'otp_popup.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WhatsappLogin extends StatefulWidget {
   const WhatsappLogin({super.key});
@@ -15,6 +17,13 @@ class WhatsappLogin extends StatefulWidget {
 class _WhatsappLoginState extends State<WhatsappLogin> {
   final TextEditingController _emailController = TextEditingController();
   bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    DeviceService.initDeviceInfo();
+  }
+
   @override
   Widget build(BuildContext context) {
     // MediaQuery
@@ -140,19 +149,36 @@ class _WhatsappLoginState extends State<WhatsappLogin> {
                             setState(() => isLoading = true);
 
                             try {
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              final lat =
+                                  prefs.getDouble('lat')?.toString() ?? "0.0";
+                              final lng =
+                                  prefs.getDouble('lng')?.toString() ?? "0.0";
+                              final deviceId =
+                                  prefs.getString('device_id') ?? "";
+                              final appSignature =
+                                  prefs.getString('app_signature') ?? "";
+
                               final response = await LoginApi.sendOtp(
                                 mobile: _emailController.text.trim(),
-                                cid: "21472147",
                                 type: "2000",
-                                deviceId: "12345",
-                                lat: "145",
-                                lng: "145",
-                                appSignature: "smart123",
+                                deviceId: deviceId,
+                                lat: lat,
+                                lng: lng,
+                                appSignature: appSignature,
                               );
 
                               if (response["error"] == false) {
                                 final String cusId =
                                     response["cus_id"]?.toString() ?? "";
+
+                                if (response.containsKey("cid") &&
+                                    response["cid"] != null) {
+                                  final String cid = response["cid"].toString();
+                                  await prefs.setString("cid", cid);
+                                }
+
                                 if (mounted) {
                                   showModalBottomSheet(
                                     context: context,
@@ -299,7 +325,7 @@ class _WhatsappLoginState extends State<WhatsappLogin> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
-                      "Don’t Have an Account? ",
+                      "Donâ€™t Have an Account? ",
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,6 +6,7 @@ import 'package:hrm/views/login_section/login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'main_root.dart';
+import 'package:hrm/views/security/app_lock_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -30,16 +31,44 @@ class _SplashScreenState extends State<SplashScreen> {
     final prefs = await SharedPreferences.getInstance();
     bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
+    // Load Security Settings
+    bool bioEnabled = prefs.getBool('auth_biometric_enabled') ?? false;
+    bool appFaceEnabled = prefs.getBool('auth_app_face_enabled') ?? false;
+    bool pinEnabled = prefs.getBool('auth_pin_enabled') ?? false;
+    String? savedPin = prefs.getString('auth_pin_code');
+
     await Future.delayed(const Duration(seconds: 2));
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => isLoggedIn ? const MainRoot() : const LoginScreen(),
-      ),
-    );
+    if (isLoggedIn) {
+      // Check if security is enabled
+      if (bioEnabled ||
+          appFaceEnabled ||
+          (pinEnabled && savedPin != null && savedPin.isNotEmpty)) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AppLockScreen(
+              isBiometricEnabled: bioEnabled,
+              isAppFaceEnabled: appFaceEnabled,
+              isPinEnabled: pinEnabled,
+              savedPin: savedPin,
+            ),
+          ),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainRoot()),
+        );
+      }
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
   }
 
   /// SAVE LATITUDE & LONGITUDE
@@ -57,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen> {
       }
 
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
       );
 
       final prefs = await SharedPreferences.getInstance();
@@ -92,3 +121,4 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 }
+

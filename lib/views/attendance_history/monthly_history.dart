@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -24,7 +24,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
   List<dynamic> attendanceList = [];
 
   // API Params
-  String cid = "21472147";
+  String cid = "";
   int uid = 0;
   String? deviceId;
 
@@ -52,7 +52,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
   Future<void> _loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      cid = prefs.getString('cid') ?? "21472147";
+      cid = prefs.getString('cid') ?? "";
       uid = prefs.getInt('uid') ?? 0;
     });
     await _getDeviceId();
@@ -85,8 +85,10 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
     try {
       Position? position;
       try {
-        position = await Geolocator.getCurrentPosition(
+        position = await Geolocator.getLastKnownPosition();
+        position ??= await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 3),
         );
       } catch (e) {
         debugPrint("Location error: $e");
@@ -96,7 +98,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
         "type": "2064",
         "cid": cid,
         "uid": uid.toString(),
-        "device_id": deviceId ?? "unknown",
+        "device_id": deviceId ?? "123456",
         "lt": position?.latitude.toString() ?? "0.0",
         "ln": position?.longitude.toString() ?? "0.0",
         "month": selectedMonth.toString(),
@@ -105,12 +107,9 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
 
       debugPrint("Monthly Request: $body");
 
-      final response = await http.post(
-        Uri.parse("https://erpsmart.in/total/api/m_api/"),
-        body: body,
-      );
-
-      debugPrint("Monthly Response: ${response.body}");
+      final response = await http
+          .post(Uri.parse("https://erpsmart.in/total/api/m_api/"), body: body)
+          .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body);
       if (data["error"] == false || data["error"] == "false") {
@@ -270,7 +269,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
       border: Border.all(color: const Color(0xffEFEFEF)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.04),
+          color: Colors.black.withValues(alpha: 0.04),
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
@@ -383,11 +382,10 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
                     ),
                     decoration: cardDecoration(),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Icon(Icons.calendar_month, size: 18),
                         const SizedBox(width: 6),
-                        _calendarHeader(),
+                        Expanded(child: _calendarHeader()),
                       ],
                     ),
                   ),
@@ -624,7 +622,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
 
   Widget _calendarHeader() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left),
@@ -632,15 +630,16 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
           constraints: const BoxConstraints(),
           onPressed: _previousMonth,
         ),
-        const SizedBox(width: 12),
-        _dropdownBox(months[selectedMonth - 1], () => _showMonthPicker()),
+        Flexible(
+          child: _dropdownBox(
+            months[selectedMonth - 1],
+            () => _showMonthPicker(),
+          ),
+        ),
         const SizedBox(width: 8),
-
-        /// YEAR DROPDOWN
-        _dropdownBox(selectedYear.toString(), () => _showYearPicker()),
-        const SizedBox(width: 12),
-
-        /// NEXT MONTH
+        Flexible(
+          child: _dropdownBox(selectedYear.toString(), () => _showYearPicker()),
+        ),
         IconButton(
           icon: const Icon(Icons.chevron_right),
           padding: EdgeInsets.zero,
@@ -925,7 +924,7 @@ class _AttendanceMonthlyHistoryState extends State<AttendanceMonthlyHistory> {
         border: Border.all(color: const Color(0xffEFEFEF)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

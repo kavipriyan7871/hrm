@@ -1,61 +1,75 @@
-// import 'dart:convert';
-// import 'dart:io';
-// import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
-// import 'package:http_parser/http_parser.dart';
-// import 'package:path/path.dart' as path;
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
-// class AttendanceApi {
-//   static const String baseUrl =
-//       "https://erpsmart.in/total/api/m_api/";
+class AttendanceApi {
+  static const String baseUrl = "https://erpsmart.in/total/api/m_api/";
 
-//   static Future<Map<String, dynamic>> checkIn({
-//     required String cid,
-//     required String uid,
-//     required String inTime,
-//     required String location,
-//     required String workMode,
-//     required String deviceId,
-//     required String lat,
-//     required String lng,
-//     required File selfie,
-//   }) async {
-//     final uri = Uri.parse(baseUrl);
-//     final request = http.MultipartRequest('POST', uri);
+  /// Fetch Work Types (Type 2069)
+  static Future<Map<String, dynamic>> fetchWorkTypes({
+    required String cid,
+    required String deviceId,
+    required String lat,
+    required String lng,
+  }) async {
+    try {
+      final body = {
+        "type": "2069",
+        "cid": cid,
+        "device_id": deviceId,
+        "lt": lat,
+        "ln": lng,
+      };
 
-//     /// TEXT FIELDS
-//     request.fields.addAll({
-//       "type": "2046",
-//       "cid": cid,
-//       "uid": uid,
-//       "in_time": inTime,
-//       "loc": location,
-//       "wrk_mde": workMode,
-//       "device_id": deviceId,
-//       "ld": "34",
-//       "lt": lat,
-//       "ln": lng,
-//     });
+      debugPrint("Fetch Work Types Request: $body");
+      final response = await http.post(Uri.parse(baseUrl), body: body);
+      debugPrint("Fetch Work Types Response: ${response.body}");
 
-//     /// 🔥 FORCE JPEG IMAGE
-//     final fileName =
-//         "checkin_${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg";
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          "error": true,
+          "error_msg": "Server Error ${response.statusCode}",
+        };
+      }
+    } catch (e) {
+      debugPrint("Fetch Work Types Error: $e");
+      return {"error": true, "error_msg": e.toString()};
+    }
+  }
 
-//     final multipartFile = await http.MultipartFile.fromPath(
-//       "selfie",
-//       selfie.path,
-//       filename: fileName,
-//       contentType: MediaType("image", "jpeg"),
-//     );
+  /// Fetch Transport Types (Type 2072)
+  static Future<Map<String, dynamic>> fetchTransportTypes({
+    required String cid,
+    required String deviceId,
+    required String lat,
+    required String lng,
+  }) async {
+    try {
+      final body = {
+        "type": "2072",
+        "cid": cid,
+        "device_id": deviceId,
+        "lt": lat,
+        "ln": lng,
+      };
 
-//     request.files.add(multipartFile);
+      debugPrint("Fetch Transport Types Request: $body");
+      final response = await http.post(Uri.parse(baseUrl), body: body);
+      debugPrint("Fetch Transport Types Response: ${response.body}");
 
-//     final streamedResponse = await request.send();
-//     final response =
-//         await http.Response.fromStream(streamedResponse);
-
-//     debugPrint("RAW RESPONSE => ${response.body}");
-
-//     return jsonDecode(response.body);
-//   }
-// }
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          "error": true,
+          "error_msg": "Server Error ${response.statusCode}",
+        };
+      }
+    } catch (e) {
+      debugPrint("Fetch Transport Types Error: $e");
+      return {"error": true, "error_msg": e.toString()};
+    }
+  }
+}

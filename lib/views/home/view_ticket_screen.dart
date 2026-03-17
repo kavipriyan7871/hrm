@@ -91,7 +91,9 @@ class _ViewTicketRaisingScreenState extends State<ViewTicketRaisingScreen> {
                             dateTime = DateTime.parse(
                               ticket["created_at"].toString(),
                             );
-                          } catch (e) {}
+                          } catch (e) {
+                            debugPrint("Error parsing ticket date: $e");
+                          }
                         } else if (ticket["date"] is DateTime) {
                           dateTime = ticket["date"];
                         }

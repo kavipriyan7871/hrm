@@ -7,7 +7,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hrm/models/expense_api.dart';
-import 'package:hrm/views/widgets/profile_card.dart';
 
 class AddExpense extends StatefulWidget {
   const AddExpense({super.key});
@@ -362,6 +361,9 @@ class _AddExpenseState extends State<AddExpense> {
                   Navigator.pop(context);
                   final XFile? image = await picker.pickImage(
                     source: ImageSource.camera,
+                    maxWidth: 800,
+                    maxHeight: 800,
+                    imageQuality: 50,
                   );
                   if (image != null) {
                     setState(() => _receiptImage = File(image.path));
@@ -375,6 +377,9 @@ class _AddExpenseState extends State<AddExpense> {
                   Navigator.pop(context);
                   final XFile? image = await picker.pickImage(
                     source: ImageSource.gallery,
+                    maxWidth: 800,
+                    maxHeight: 800,
+                    imageQuality: 50,
                   );
                   if (image != null) {
                     setState(() => _receiptImage = File(image.path));
@@ -441,7 +446,7 @@ class _AddExpenseState extends State<AddExpense> {
           prefs.getString('employee_table_id') ??
           prefs.getInt('uid')?.toString() ??
           "";
-      final cid = prefs.getString('cid') ?? "21472147";
+      final cid = prefs.getString('cid') ?? "";
 
       String? deviceId = prefs.getString('device_id');
       if (deviceId == null) {
@@ -453,7 +458,7 @@ class _AddExpenseState extends State<AddExpense> {
           final iosInfo = await deviceInfo.iosInfo;
           deviceId = iosInfo.identifierForVendor;
         } else {
-          deviceId = "unknown_device";
+          deviceId = "123456";
         }
       }
 
@@ -473,7 +478,7 @@ class _AddExpenseState extends State<AddExpense> {
         receiptImage: _receiptImage,
       );
 
-      print("Add Expense Response in UI: $response");
+      debugPrint("Add Expense Response in UI: $response");
 
       if (!mounted) return;
 
@@ -500,7 +505,7 @@ class _AddExpenseState extends State<AddExpense> {
         );
       }
     } catch (e) {
-      print("Error adding expense: $e");
+      debugPrint("Error adding expense: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
@@ -558,7 +563,7 @@ class SuccessExpenseDialog extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              "₹$amount Has Been Submitted",
+              "\u20B9$amount Has Been Submitted",
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 22,

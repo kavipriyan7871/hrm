@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hrm/views/home/ticket_raise.dart';
 
@@ -15,7 +15,7 @@ class FeedbackSupportScreen extends StatelessWidget {
 
     final double horizontalPadding = isTablet ? 32.0 : 20.0;
     final double topPadding = isTablet ? 32.0 : 24.0;
-    final double titleFontSize = isTablet ? 26.0 : 22.0;
+    // final double titleFontSize = isTablet ? 26.0 : 22.0;
     final double bodyFontSize = isTablet ? 16.5 : 15.0;
     final double buttonHeight = isTablet ? 64.0 : 56.0;
 
@@ -31,10 +31,7 @@ class FeedbackSupportScreen extends StatelessWidget {
         ),
         title: Text(
           "Feedback & Support",
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-          ),
+          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w500),
         ),
         centerTitle: false,
       ),
@@ -47,7 +44,7 @@ class FeedbackSupportScreen extends StatelessWidget {
 
             // Title
             Text(
-              "Feedback & Support – HRM Portal",
+              "Feedback & Support \u2013 HRM Portal",
               style: GoogleFonts.poppins(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -60,8 +57,8 @@ class FeedbackSupportScreen extends StatelessWidget {
             // Description
             Text(
               "We're here to support you in your HR journey.\n"
-                  "Got questions about attendance, payroll, leave, or performance? Find quick answers or connect with our HR team.\n\n"
-                  "Call Us Directly",
+              "Got questions about attendance, payroll, leave, or performance? Find quick answers or connect with our HR team.\n\n"
+              "Call Us Directly",
               style: GoogleFonts.poppins(
                 fontSize: bodyFontSize,
                 color: Colors.black,
@@ -78,7 +75,7 @@ class FeedbackSupportScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF26A69A).withOpacity(0.1),
+                    color: const Color(0xFF26A69A).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -102,7 +99,7 @@ class FeedbackSupportScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "HR Helpdesk: +91 98765–43210\nAvailable 9 AM – 6 PM (Mon–Sat)",
+                        "HR Helpdesk: +91 98765â€“43210\nAvailable 9 AM â€“ 6 PM (Monâ€“Sat)",
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
@@ -135,7 +132,7 @@ class FeedbackSupportScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF26A69A).withOpacity(0.1),
+                    color: const Color(0xFF26A69A).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -162,7 +159,7 @@ class FeedbackSupportScreen extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: bodyFontSize + 1,
                           fontWeight: FontWeight.w600,
-                          color: const  Color(0xFF26A69A),
+                          color: const Color(0xFF26A69A),
                         ),
                       ),
                     ],
@@ -180,7 +177,10 @@ class FeedbackSupportScreen extends StatelessWidget {
                 height: buttonHeight,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => TicketRaise(),));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => TicketRaise()),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF26A69A),

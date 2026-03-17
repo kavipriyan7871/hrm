@@ -1,3 +1,4 @@
+﻿import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -10,6 +11,7 @@ class EmployeeApi {
     required String deviceId,
     required String lat,
     required String lng,
+    String? token,
   }) async {
     try {
       final body = {
@@ -20,13 +22,14 @@ class EmployeeApi {
         "device_id": deviceId,
         "lt": lat,
         "ln": lng,
+        if (token != null && token.isNotEmpty) "token": token,
       };
 
-      print("Employee Details Request Body: $body");
+      debugPrint("Employee Details Request Body: $body");
 
       final response = await http.post(Uri.parse(baseUrl), body: body);
 
-      print("Employee Details Response: ${response.body}");
+      debugPrint("Employee Details Response: ${response.body}");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -37,7 +40,7 @@ class EmployeeApi {
         };
       }
     } catch (e) {
-      print("Employee Details API Error: $e");
+      debugPrint("Employee Details API Error: $e");
       return {"error": true, "error_msg": e.toString()};
     }
   }

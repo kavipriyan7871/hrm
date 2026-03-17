@@ -1,3 +1,4 @@
+﻿import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -30,7 +31,7 @@ class UserDataManager {
       return null;
     }
 
-    final fullKey = '${_userKeyPrefix}${uid}_$key';
+    final fullKey = '$_userKeyPrefix${uid}_$key';
     final jsonString = prefs.getString(fullKey);
 
     if (jsonString == null) return null;
@@ -40,7 +41,7 @@ class UserDataManager {
       // Ensure elements are Map<String, dynamic>
       return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (e) {
-      print('Error decoding user list for key $fullKey: $e');
+      debugPrint('Error decoding user list for key $fullKey: $e');
       return null;
     }
   }
@@ -54,16 +55,18 @@ class UserDataManager {
     final uid = await _getCurrentUserId();
 
     if (uid == null) {
-      print('Cannot save user list: No active user ID found');
+      debugPrint('Cannot save user list: No active user ID found');
       return;
     }
 
-    final fullKey = '${_userKeyPrefix}${uid}_$key';
+    final fullKey = '$_userKeyPrefix${uid}_$key';
     try {
       final jsonString = jsonEncode(list);
       await prefs.setString(fullKey, jsonString);
     } catch (e) {
-      print('Error encoding user list for key $fullKey: $e');
+      debugPrint('Error encoding user list for key $fullKey: $e');
     }
   }
 }
+
+

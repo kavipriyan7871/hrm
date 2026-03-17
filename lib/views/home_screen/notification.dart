@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:hrm/views/main_root.dart';
-import 'package:intl/intl.dart';
+import '../../services/notification_service.dart';
+import 'package:flutter/services.dart';
 
 class NotificationApp extends StatelessWidget {
   const NotificationApp({super.key});
@@ -24,6 +25,22 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen> {
   String selectedFilter = "All";
+  String? _fcmToken;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFcmToken();
+  }
+
+  Future<void> _loadFcmToken() async {
+    final token = await NotificationService.getFCMToken();
+    if (mounted) {
+      setState(() {
+        _fcmToken = token;
+      });
+    }
+  }
 
   // Sample data with categories
   final List<NotificationItem> notifications = const [
@@ -63,7 +80,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     ),
     NotificationItem(
       title: "Expense Reimbursement Processed",
-      subtitle: "Your On duty Expense claim for ₹2500 has been Approved",
+      subtitle: "Your On duty Expense claim for \u20B92500 has been Approved",
       icon: Icons.currency_rupee,
       iconColor: Color(0xffCA0000),
       time: "Yesterday",
@@ -233,11 +250,97 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 16),
+
+                // FCM Token Section (Copyable)
+                if (_fcmToken != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.teal.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Your FCM Token:",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.teal,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.copy,
+                                size: 16,
+                                color: Colors.teal,
+                              ),
+                              onPressed: () {
+                                Clipboard.setData(
+                                  ClipboardData(text: _fcmToken!),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "FCM Token copied to clipboard",
+                                    ),
+                                  ),
+                                );
+                              },
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _fcmToken!,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.black54,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 16),
+
+                // Test Notification Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await NotificationService.showLocalNotification(
+                        title: "Test Notification",
+                        body:
+                            "Hello! This is a test notification from HRM app.",
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text("Send Test Local Notification"),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
               ],
             ),
           ),
-
-          const SizedBox(height: 12),
 
           /// Notification List
           Expanded(
@@ -336,7 +439,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             offset: const Offset(0, 2),
             blurRadius: 4,
           ),
@@ -349,7 +452,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: item.iconColor.withOpacity(0.1),
+              color: item.iconColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(item.icon, color: item.iconColor, size: 20),

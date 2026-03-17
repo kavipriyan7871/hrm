@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -29,7 +30,7 @@ class MarketingApi {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      print("Marketing Check-In Response: ${response.body}");
+      debugPrint("Marketing Check-In Response: ${response.body}");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -40,7 +41,7 @@ class MarketingApi {
         };
       }
     } catch (e) {
-      print("Marketing Check-In Error: $e");
+      debugPrint("Marketing Check-In Error: $e");
       return {"error": true, "message": e.toString()};
     }
   }
@@ -79,9 +80,9 @@ class MarketingApi {
       if (attachment != null) {
         request.files.add(
           await http.MultipartFile.fromPath(
-            'attachments[]',
+            'attachments',
             attachment.path,
-            contentType: MediaType('image', 'jpeg'), // Or dynamic
+            contentType: MediaType('image', 'jpeg'),
           ),
         );
       }
@@ -89,7 +90,7 @@ class MarketingApi {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      print("Marketing Check-Out Response: ${response.body}");
+      debugPrint("Marketing Check-Out Response: ${response.body}");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -100,7 +101,56 @@ class MarketingApi {
         };
       }
     } catch (e) {
-      print("Marketing Check-Out Error: $e");
+      debugPrint("Marketing Check-Out Error: $e");
+      return {"error": true, "error_msg": e.toString()};
+    }
+  }
+
+  // Fetch Marketing Enquiries (Type: 2076)
+  static Future<Map<String, dynamic>> fetchEnquiries({
+    required String uid,
+    required String cid,
+    required String deviceId,
+    required String lat,
+    required String lng,
+    required String assignTo,
+    String? token,
+    String type = "2076",
+  }) async {
+    try {
+      final Map<String, String> body = {
+        'cid': cid,
+        'uid': uid,
+        'device_id': deviceId,
+        'lt': lat,
+        'ln': lng,
+        'assign_to': assignTo,
+        'type': type,
+      };
+
+      if (token != null && token.isNotEmpty) {
+        body['token'] = token;
+      }
+
+      debugPrint("Marketing Enquiries Request Params: $body");
+
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        body: body,
+      );
+
+      debugPrint("Marketing Enquiries Response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          "error": true,
+          "error_msg": "Server error: ${response.statusCode}",
+        };
+      }
+    } catch (e) {
+      debugPrint("Marketing Enquiries Error: $e");
       return {"error": true, "error_msg": e.toString()};
     }
   }
@@ -127,7 +177,7 @@ class MarketingApi {
         },
       );
 
-      print("Marketing History Response: ${response.body}");
+      debugPrint("Marketing History Response: ${response.body}");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -138,7 +188,7 @@ class MarketingApi {
         };
       }
     } catch (e) {
-      print("Marketing History Error: $e");
+      debugPrint("Marketing History Error: $e");
       return {"error": true, "error_msg": e.toString()};
     }
   }

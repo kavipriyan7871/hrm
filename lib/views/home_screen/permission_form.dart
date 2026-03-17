@@ -1,6 +1,12 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'leave_management.dart';
 
 extension TimeOfDayExtension on TimeOfDay {
   String format12Hour() {
@@ -31,23 +37,20 @@ class _PermissionFormState extends State<PermissionForm> {
   String? uid;
   bool isLoading = false;
 
-  String? permissionType;
+  String? selectedPermissionCode;
   DateTime? selectedDate;
   TimeOfDay? fromTime;
   TimeOfDay? toTime;
   String? reason;
 
-  final List<String> permissionTypes = [
-    'Medical Appointment',
-    'Personal Work',
-    'Family Emergency',
-    'Official Work',
-    'Other',
-  ];
+  List<dynamic> permissionTypesData = [];
 
   @override
   void initState() {
     super.initState();
+    selectedDate = DateTime.now();
+    _dateController.text =
+        "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}";
     _fetchUserData();
   }
 
@@ -66,6 +69,34 @@ class _PermissionFormState extends State<PermissionForm> {
       uid = prefs.getInt('uid')?.toString();
       employeeId = uid;
     });
+    _fetchPermissionTypes();
+  }
+
+  Future<void> _fetchPermissionTypes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final response = await http.post(
+        Uri.parse("https://erpsmart.in/total/api/m_api/"),
+        body: {
+          "type": "2066",
+          "cid": prefs.getString('cid') ?? "",
+          "device_id": prefs.getString('device_id') ?? "123456",
+          "lt": "145",
+          "ln": "145",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['error'] == false) {
+          setState(() {
+            permissionTypesData = data['data']['permission_types'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching permission types: $e");
+    }
   }
 
   Future<void> _applyPermission() async {
@@ -84,28 +115,121 @@ class _PermissionFormState extends State<PermissionForm> {
 
     setState(() => isLoading = true);
 
-    // Simulate API call delay
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String uidParam =
+          prefs.getInt('uid')?.toString() ?? "10"; // Default or fallback
+      final String cid = prefs.getString('cid') ?? "";
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Permission request submitted successfully!"),
-          backgroundColor: Colors.green,
-        ),
-      );
-      _formKey.currentState!.reset();
-      _dateController.clear();
-      _fromTimeController.clear();
-      _toTimeController.clear();
-      setState(() {
-        selectedDate = null;
-        fromTime = null;
-        toTime = null;
-        permissionType = null;
-        reason = null;
-        isLoading = false;
-      });
+      // 1. Get Device ID
+      String deviceId = "unknown";
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        deviceId = androidInfo.id;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        deviceId = iosInfo.identifierForVendor ?? "unknown";
+      }
+
+      // 2. Get Location (Lat/Lng only, No Address/Loc as per new request)
+      String lat = "0.0";
+      String lng = "0.0";
+
+      try {
+        Position? pos = await _determinePosition();
+        if (pos != null) {
+          lat = pos.latitude.toString();
+          lng = pos.longitude.toString();
+        }
+      } catch (e) {
+        debugPrint("Location error: $e");
+      }
+
+      // 3. API Call
+      final url = Uri.parse("https://erpsmart.in/total/api/m_api/");
+
+      // Format Time to HH:mm (24h)
+      String fromTimeStr =
+          "${fromTime!.hour.toString().padLeft(2, '0')}:${fromTime!.minute.toString().padLeft(2, '0')}";
+      String toTimeStr =
+          "${toTime!.hour.toString().padLeft(2, '0')}:${toTime!.minute.toString().padLeft(2, '0')}";
+
+      final body = {
+        "type": "2067",
+        "cid": cid,
+        "uid": uidParam,
+        "permission_type": selectedPermissionCode ?? "",
+        "app_date":
+            "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}",
+        "start_time": fromTimeStr,
+        "end_time": toTimeStr,
+        "reason": reason ?? "",
+        "device_id": deviceId,
+        "lt": lat,
+        "ln": lng,
+        "token": "", // From user example
+      };
+
+      debugPrint("Permission API Request Body: $body");
+
+      final response = await http.post(url, body: body);
+
+      debugPrint("Permission API Response: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        // Check "error": false
+        if (data['error'] == false) {
+          String msg =
+              data['error_msg'] ?? "Permission request submitted successfully";
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg), backgroundColor: Colors.green),
+            );
+
+            // Redirect to Leave Management Screen
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const LeaveManagementScreen(),
+              ),
+            );
+          }
+        } else {
+          throw Exception(
+            data['error_msg'] ?? data['message'] ?? "Submission Failed",
+          );
+        }
+      } else {
+        throw Exception("Server Error: ${response.statusCode}");
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  Future<Position?> _determinePosition() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+      if (permission == LocationPermission.deniedForever) return null;
+
+      return await Geolocator.getCurrentPosition();
+    } catch (e) {
+      return null;
     }
   }
 
@@ -181,16 +305,19 @@ class _PermissionFormState extends State<PermissionForm> {
           _sectionTitle('Permission type'),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: permissionType,
+            value: selectedPermissionCode,
             decoration: _inputDecoration('Select Permission Type'),
             icon: const Icon(Icons.arrow_drop_down, color: Colors.black54),
-            items: permissionTypes.map((type) {
+            items: permissionTypesData.map((type) {
               return DropdownMenuItem(
-                value: type,
-                child: Text(type, style: GoogleFonts.poppins(fontSize: 14)),
+                value: type['code'].toString(),
+                child: Text(
+                  type['permission_type_name'].toString(),
+                  style: GoogleFonts.poppins(fontSize: 14),
+                ),
               );
             }).toList(),
-            onChanged: (val) => setState(() => permissionType = val),
+            onChanged: (val) => setState(() => selectedPermissionCode = val),
             validator: (val) => val == null ? 'Required' : null,
           ),
 
@@ -202,8 +329,13 @@ class _PermissionFormState extends State<PermissionForm> {
           TextFormField(
             controller: _dateController,
             readOnly: true,
-            onTap: () => _selectDate(context),
-            style: GoogleFonts.poppins(fontSize: 14),
+            enabled: false, // Fully disable manual editing
+            onTap:
+                null, // Disable date picker popup as per request "date edit panna mutiyadhu"
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.grey.shade700,
+            ),
             decoration: _inputDecoration(
               'Select Date',
               icon: Icons.calendar_today_outlined,

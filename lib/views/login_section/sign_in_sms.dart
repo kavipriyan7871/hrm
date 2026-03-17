@@ -1,13 +1,14 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hrm/views/login_section/login_screen.dart';
-import 'package:hrm/views/login_section/sign-in_whatsapp.dart';
-import 'package:hrm/views/login_section/sign-up.dart';
+import 'package:hrm/views/login_section/sign_in_whatsapp.dart';
+import 'package:hrm/views/login_section/sign_up.dart';
 import 'otp_popup.dart';
 
 import '../../models/login_api.dart';
+import 'package:hrm/services/device_service.dart';
 
 class SmsLogin extends StatefulWidget {
   const SmsLogin({super.key});
@@ -19,6 +20,12 @@ class SmsLogin extends StatefulWidget {
 class _SmsLoginState extends State<SmsLogin> {
   final TextEditingController _emailController = TextEditingController();
   bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    DeviceService.initDeviceInfo();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +218,7 @@ class _SmsLoginState extends State<SmsLogin> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
-                      "Don’t Have an Account? ",
+                      "Donâ€™t Have an Account? ",
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -252,7 +259,7 @@ class _SmsLoginState extends State<SmsLogin> {
     );
   }
 
-  /// ✅ SEND OTP API
+  /// âœ… SEND OTP API
   Future<void> _sendOtpApi() async {
     final mobile = _emailController.text.trim();
     if (mobile.isEmpty) {
@@ -274,17 +281,18 @@ class _SmsLoginState extends State<SmsLogin> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lat = prefs.getDouble('lat')?.toString() ?? "145";
-      final lng = prefs.getDouble('lng')?.toString() ?? "145";
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final deviceId = prefs.getString('device_id') ?? "";
+      final appSignature = prefs.getString('app_signature') ?? "";
 
       final response = await LoginApi.sendOtp(
         mobile: _emailController.text.trim(),
-        cid: "21472147",
         type: "2000",
-        deviceId: "12345",
+        deviceId: deviceId,
         lat: lat,
         lng: lng,
-        appSignature: "smart123",
+        appSignature: appSignature,
       );
 
       debugPrint("OTP API RESPONSE => $response");
@@ -304,6 +312,11 @@ class _SmsLoginState extends State<SmsLogin> {
         );
 
         final String cusId = response["cus_id"]?.toString() ?? "";
+
+        if (response.containsKey("cid") && response["cid"] != null) {
+          final String cid = response["cid"].toString();
+          await prefs.setString("cid", cid);
+        }
 
         showModalBottomSheet(
           context: context,

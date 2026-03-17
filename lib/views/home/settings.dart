@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hrm/views/widgets/user_avatar.dart';
 import 'package:hrm/views/home/security.dart';
 import 'package:hrm/views/home_screen/employee_detail.dart';
 import 'package:hrm/views/login_section/login_screen.dart';
@@ -10,8 +11,6 @@ import 'expense.dart';
 import 'feedback.dart';
 import 'notification_alert.dart';
 
-import 'dart:io';
-import 'package:device_info_plus/device_info_plus.dart';
 import '../../models/employee_api.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -39,34 +38,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _fetchEmployeeDetails() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Load cached data first for immediate display
+      if (mounted) {
+        setState(() {
+          userName = prefs.getString('name') ?? "User";
+          userMobile = prefs.getString('mobile') ?? "";
+          profilePhoto = prefs.getString('profile_photo') ?? "";
+          isLoading = false;
+        });
+      }
+
       final int uid = prefs.getInt('uid') ?? 0;
-      // Using "145" as fallback to match the successful snippet provided for this API
       final String lat = prefs.getDouble('lat')?.toString() ?? "145";
       final String lng = prefs.getDouble('lng')?.toString() ?? "145";
 
       // Get Device ID
-      String deviceId = "123456"; // Default/Fallback device ID
-      try {
-        final deviceInfo = DeviceInfoPlugin();
-        if (Platform.isAndroid) {
-          final androidInfo = await deviceInfo.androidInfo;
-          deviceId = androidInfo.id;
-        } else if (Platform.isIOS) {
-          final iosInfo = await deviceInfo.iosInfo;
-          deviceId = iosInfo.identifierForVendor ?? "123456";
-        }
-      } catch (e) {
-        debugPrint("Could not get real device ID, using fallback: $e");
-      }
-
-      debugPrint("FETCHING EMP DETAILS FOR UID: $uid, DEVICE: $deviceId");
-
+      String deviceId = prefs.getString('device_id') ?? "";
+      
       final response = await EmployeeApi.getEmployeeDetails(
         uid: uid == 0 ? "9" : uid.toString(), // Using 9 as fallback if uid is 0
-        cid: "21472147",
+        cid: prefs.getString('cid') ?? "",
         deviceId: deviceId,
         lat: lat == "0.0" ? "145" : lat,
         lng: lng == "0.0" ? "145" : lng,
+        token: prefs.getString('token'),
       );
 
       if (response["error"] == false || response["error"] == "false") {
@@ -89,6 +85,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await prefs.setString('dob', response["dob"] ?? "");
         await prefs.setString('address', response["address"] ?? "");
         await prefs.setString('profile_photo', profilePhoto);
+        
+        // SAVE ASSIGN_TO FOR MARKETING SCREEN SPEED
+        if (response["uid"] != null) {
+          await prefs.setString('assign_to', response["uid"].toString());
+          debugPrint("ASSIGN_TO SAVED IN CACHE: ${response["uid"]}");
+        }
       } else {
         if (!mounted) return;
         setState(() {
@@ -144,13 +146,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
-                        image: DecorationImage(
-                          image: profilePhoto.isNotEmpty
-                              ? NetworkImage(profilePhoto)
-                              : const AssetImage('assets/profile.png')
-                                    as ImageProvider,
-                          fit: BoxFit.cover,
-                        ),
+                      ),
+                      child: UserAvatar(
+                        radius: 35,
+                        profileImageUrl: profilePhoto,
+                        userName: userName,
                       ),
                     ),
                     const SizedBox(width: 15),
@@ -356,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: const Color(0xFF233E94), // Dark blue thumb
+          activeThumbColor: const Color(0xFF233E94), // Dark blue thumb
           activeTrackColor: const Color(0xFFD1D5DB), // Light grey track
           inactiveThumbColor: const Color(0xFF9CA3AF),
           inactiveTrackColor: const Color(0xFFE5E7EB),
@@ -427,15 +427,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             final prefs = await SharedPreferences.getInstance();
-                            // Preserve location data
+                            // Preserve location and device data
                             final double? lat = prefs.getDouble('lat');
                             final double? lng = prefs.getDouble('lng');
+                            final String? deviceId = prefs.getString(
+                              'device_id',
+                            );
+                            final String? appSignature = prefs.getString(
+                              'app_signature',
+                            );
 
                             await prefs.clear(); // Clear all data on logout
 
-                            // Restore location data
+                            // Restore location and device data
                             if (lat != null) await prefs.setDouble('lat', lat);
                             if (lng != null) await prefs.setDouble('lng', lng);
+                            if (deviceId != null) {
+                              await prefs.setString('device_id', deviceId);
+                            }
+                            if (appSignature != null) {
+                              await prefs.setString(
+                                'app_signature',
+                                appSignature,
+                              );
+                            }
 
                             if (mounted) {
                               Navigator.pushAndRemoveUntil(

@@ -7,11 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:intl/intl.dart';
 import '../../models/employee_api.dart';
 import 'weekly_history.dart';
 import 'check_in.dart';
 import 'check_out.dart';
 import '../main_root.dart';
+import 'package:hrm/views/widgets/user_avatar.dart';
+import 'marketing_timeline.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -40,6 +43,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   int bottomNavIndex = 1;
   int selectedTab = 1; // Default to Monthly as per typical dashboard usage here
   bool isCheckedIn = false;
+  bool isTodayFinished = false;
   Timer? breakTimer;
   Duration breakDuration = Duration.zero;
   Duration totalBreakDuration = Duration.zero;
@@ -47,13 +51,14 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   int uid = 4; // User ID
   String? serverUidString; // To store the original value from server
   String userName = "User";
+  String profilePhoto = "";
   String breakPurpose = "Tea"; // Default/Sample purpose
   final TextEditingController purposeController = TextEditingController();
   List<BreakEntry> breakHistory = [];
   DateTime? currentBreakInTime;
 
   // API Integration fields
-  String cid = "21472147"; // Company ID
+  String cid = ""; // Company ID
   String? employeeCode;
   String? employeeName;
   String? deviceId;
@@ -81,15 +86,19 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       uid = prefs.getInt('uid') ?? 4;
-      cid = prefs.getString('cid') ?? "21472147";
+      cid = prefs.getString('cid') ?? "";
       serverUidString = prefs.getString('server_uid');
       isCheckedIn = prefs.getBool('isCheckedIn') ?? false;
       userName = prefs.getString('name') ?? "User";
       employeeName = prefs.getString('name');
       employeeCode = prefs.getString('employee_code');
+      profilePhoto = prefs.getString('profile_photo') ?? "";
+      deviceId = prefs.getString('device_id') ?? "";
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      isTodayFinished = prefs.getString('last_checkout_date') == today;
     });
     debugPrint(
-      "LOADED INITIAL STATE: isCheckedIn=$isCheckedIn, uid=$uid, cid=$cid",
+      "LOADED INITIAL STATE: deviceId=$deviceId, isCheckedIn=$isCheckedIn, uid=$uid, cid=$cid",
     );
   }
 
@@ -98,7 +107,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
 
     // 1. Get identifiers from SharedPreferences
     final storedUid = prefs.getInt('uid') ?? 0;
-    final storedCid = prefs.getString('cid') ?? "21472147";
+    final storedCid = prefs.getString('cid') ?? "";
     final storedCode = prefs.getString('employee_code');
     final storedName = prefs.getString('name');
 
@@ -107,6 +116,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       cid = storedCid;
       employeeCode = storedCode;
       employeeName = storedName ?? userName;
+      profilePhoto = prefs.getString('profile_photo') ?? "";
     });
 
     debugPrint(
@@ -115,12 +125,17 @@ class AttendanceScreenState extends State<AttendanceScreen> {
 
     // 2. Fetch full details from server to sync state
     try {
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final dId = prefs.getString('device_id') ?? deviceId ?? "";
+
       final res = await EmployeeApi.getEmployeeDetails(
         uid: uid.toString(),
         cid: cid,
-        deviceId: deviceId ?? "123456",
-        lat: prefs.getDouble('lat')?.toString() ?? "123",
-        lng: prefs.getDouble('lng')?.toString() ?? "123",
+        deviceId: dId,
+        lat: lat,
+        lng: lng,
+        token: prefs.getString('token'),
       );
 
       if (res["error"] == false) {
@@ -155,20 +170,30 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             employeeName = serverName;
             userName = serverName;
           }
-          if (data["employee_code"] != null)
+          if (data["employee_code"] != null) {
             employeeCode = data["employee_code"].toString();
+          }
+          if (data["profile_photo"] != null) {
+            profilePhoto = data["profile_photo"].toString();
+          }
         });
 
         // Persist synced identifiers
         await prefs.setInt('uid', uid);
         await prefs.setString('cid', cid);
-        if (serverUidString != null)
+        if (serverUidString != null) {
           await prefs.setString('server_uid', serverUidString!);
-        if (foundId != null)
+        }
+        if (foundId != null) {
           await prefs.setString('employee_table_id', foundId);
+        }
         if (employeeName != null) await prefs.setString('name', employeeName!);
-        if (employeeCode != null)
+        if (employeeCode != null) {
           await prefs.setString('employee_code', employeeCode!);
+        }
+        if (profilePhoto.isNotEmpty) {
+          await prefs.setString('profile_photo', profilePhoto);
+        }
       } else {
         debugPrint("DETAILS SYNC FAILED => ${res["error_msg"]}");
       }
@@ -238,7 +263,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       }
 
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
       return position;
     } catch (e) {
@@ -261,36 +288,22 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     });
 
     try {
-      // Get location for API call
-      final currentPos =
-          await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high,
-          ).onError((error, stackTrace) {
-            debugPrint("Location error in fetch summary: $error");
-            return Position(
-              longitude: 0,
-              latitude: 0,
-              timestamp: DateTime.now(),
-              accuracy: 0,
-              altitude: 0,
-              heading: 0,
-              speed: 0,
-              speedAccuracy: 0,
-              altitudeAccuracy: 0,
-              headingAccuracy: 0,
-            );
-          });
-
       // Use user provided params or dynamic
-      // User requested: "type:2064, cid:21472147, uid:8, device_id:12345, lt:145, ln:145"
-      // We will use dynamic values but stick to the provided example parameters logic if needed
+
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final dId = prefs.getString('device_id') ?? deviceId ?? "";
+
       final body = {
         "type": "2064",
-        "cid": cid, // Dynamic or default "21472147"
-        "uid": uid.toString(), // Dynamic or default "8"
-        "device_id": deviceId ?? "123456",
-        "lt": currentPos.latitude.toString(),
-        "ln": currentPos.longitude.toString(),
+        "cid": cid,
+        "uid": uid.toString(),
+        "device_id": dId,
+        "lt": lat,
+        "ln": lng,
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("ATTENDANCE SUMMARY REQUEST => $body");
@@ -311,6 +324,38 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             } else {
               attendanceHistory = {};
             }
+
+            // Sync isCheckedIn status with today's record from server
+            final List<dynamic> records = data["data"] ?? [];
+            final String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+            final todayRecord = records.firstWhere(
+              (e) => e["date"] == today,
+              orElse: () => null,
+            );
+
+            if (todayRecord != null) {
+              final String inTime = todayRecord["in_time"]?.toString() ?? "";
+              final String outTime = todayRecord["out_time"]?.toString() ?? "";
+
+              if (inTime.isNotEmpty && outTime.isEmpty) {
+                isCheckedIn = true;
+                isTodayFinished = false;
+              } else if (inTime.isNotEmpty && outTime.isNotEmpty) {
+                isCheckedIn = false;
+                isTodayFinished = true;
+              } else {
+                isCheckedIn = false;
+                isTodayFinished = false;
+              }
+
+              // Update local storage to match server
+              _syncLocalAttendanceState(today, inTime, outTime);
+            } else {
+              // No record for today found on server
+              isCheckedIn = false;
+              isTodayFinished = false;
+            }
           });
         }
       } else {
@@ -329,34 +374,41 @@ class AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  Future<void> _syncLocalAttendanceState(
+    String today,
+    String inTime,
+    String outTime,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isCheckedIn', isCheckedIn);
+    if (inTime.isNotEmpty) {
+      await prefs.setString('last_checkin_date', today);
+    }
+    if (outTime.isNotEmpty) {
+      await prefs.setString('last_checkout_date', today);
+    }
+    debugPrint(
+      "Synced Local Attendance: isCheckedIn=$isCheckedIn, finished=$isTodayFinished, lastIn=$inTime, lastOut=$outTime",
+    );
+  }
+
   Future<void> _fetchLeaveStatistics() async {
     try {
-      final currentPos =
-          await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high,
-          ).onError((error, stackTrace) {
-            return Position(
-              longitude: 0,
-              latitude: 0,
-              timestamp: DateTime.now(),
-              accuracy: 0,
-              altitude: 0,
-              heading: 0,
-              speed: 0,
-              speedAccuracy: 0,
-              altitudeAccuracy: 0,
-              headingAccuracy: 0,
-            );
-          });
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+      final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+      final dId = prefs.getString('device_id') ?? deviceId ?? "";
 
       final body = {
-        "type": "2052", // Call Leave History (2052) instead of Summary (2051)
+        "type": "2052",
         "cid": cid,
         "uid": uid.toString(),
-        "id": uid.toString(), // Some APIs need 'id' too
-        "device_id": deviceId ?? "123456",
-        "lt": currentPos.latitude.toString(),
-        "ln": currentPos.longitude.toString(),
+        "id": uid.toString(),
+        "device_id": dId,
+        "lt": lat,
+        "ln": lng,
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("LEAVE STATISTICS REQUEST => $body");
@@ -407,6 +459,14 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           // Accumulate Taken by Type first
           Map<String, double> takenMap = {};
           for (var item in historyList) {
+            // âœ… Only count APPROVED leaves
+            String statusRaw = (item['status'] ?? "0").toString().toLowerCase();
+            bool isApproved =
+                statusRaw == "1" ||
+                statusRaw.contains("approv") ||
+                statusRaw.contains("accept");
+            if (!isApproved) continue;
+
             String typeName =
                 (item['leave_type_name'] ?? item['leave_type'] ?? "")
                     .toString()
@@ -414,18 +474,21 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                     .trim();
             double taken =
                 double.tryParse(
-                  item['leave_taken']?.toString() ??
+                  item['no_of_days']?.toString() ??
+                      item['leave_taken']?.toString() ??
                       item['days']?.toString() ??
                       "0",
                 ) ??
                 0;
 
-            // Simplify status check if needed, currently assuming all history is relevant
             takenMap[typeName] = (takenMap[typeName] ?? 0) + taken;
           }
 
           // Calculate LOP vs Paid based on allowance
           takenMap.forEach((typeName, taken) {
+            // âœ… Ensure taken is never negative
+            if (taken <= 0) return;
+
             bool isExplicitLop =
                 typeName.contains("loss of pay") ||
                 typeName.contains("lop") ||
@@ -437,17 +500,16 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             } else {
               double allowance = allowanceMap[typeName] ?? -1;
 
-              // If allowance is defined (>=0), check for excess
               if (allowance >= 0) {
                 if (taken > allowance) {
+                  // Excess beyond allowance â†’ LOP
                   lopTaken += (taken - allowance);
                   totalTaken += allowance;
                 } else {
                   totalTaken += taken;
                 }
               } else {
-                // No allowance info found, assume Paid (or User preference?)
-                // Defaulting to Paid to avoid showing massive LOP if config missing
+                // No allowance info â€” count as paid leave
                 totalTaken += taken;
               }
             }
@@ -470,6 +532,8 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 double.tryParse(item['max_days_per_year']?.toString() ?? "0") ??
                 0;
 
+            if (taken <= 0) continue; // âœ… Skip zero/negative
+
             bool isExplicitLop =
                 typeName.contains("loss of pay") ||
                 typeName.contains("lop") ||
@@ -479,7 +543,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             if (isExplicitLop) {
               lopTaken += taken;
             } else {
-              if (taken > allowance) {
+              if (allowance > 0 && taken > allowance) {
                 lopTaken += (taken - allowance);
                 totalTaken += allowance;
               } else {
@@ -489,15 +553,22 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           }
         }
 
+        // âœ… Clamp: negative totalTaken â†’ move to LOP
+        if (totalTaken < 0) {
+          lopTaken += totalTaken.abs();
+          totalTaken = 0;
+        }
+        if (lopTaken < 0) lopTaken = 0;
+
         if (mounted) {
           setState(() {
-            // Using logic: display integers if whole numbers
+            // Display integers if whole numbers, else 1 decimal
             leaveTakenStr = totalTaken == totalTaken.toInt()
                 ? totalTaken.toInt().toString()
-                : totalTaken.toString();
+                : totalTaken.toStringAsFixed(1);
             lopTakenStr = lopTaken == lopTaken.toInt()
                 ? lopTaken.toInt().toString()
-                : lopTaken.toString();
+                : lopTaken.toStringAsFixed(1);
 
             debugPrint("--- LEAVE STATISTICS DEBUG ---");
             debugPrint("Total Leave Taken (Calculated): $leaveTakenStr");
@@ -532,14 +603,17 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       }
 
       // Make API call using identified parameters from login/sync flow
+      final prefs = await SharedPreferences.getInstance();
       final body = {
         "type": "2055",
         "cid": cid,
         "uid": serverUidString ?? uid.toString(),
-        "device_id": deviceId ?? "123456",
+        "device_id": deviceId ?? "",
         "lt": currentPosition!.latitude.toString(),
         "ln": currentPosition!.longitude.toString(),
         "reason": breakPurpose,
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("BREAK IN POST REQUEST => $body");
@@ -635,13 +709,16 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       }
 
       // Make API call using identified parameters from login/sync flow
+      final prefs = await SharedPreferences.getInstance();
       final body = {
         "type": "2056",
         "cid": cid,
         "uid": serverUidString ?? uid.toString(),
-        "device_id": deviceId ?? "123456",
+        "device_id": deviceId ?? "",
         "lt": currentPosition!.latitude.toString(),
         "ln": currentPosition!.longitude.toString(),
+        if (prefs.getString('token') != null)
+          "token": prefs.getString('token')!,
       };
 
       debugPrint("BREAK OUT POST REQUEST => $body");
@@ -983,7 +1060,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                               color: const Color(0xFFE6F6F4),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: const Color(0xFF00A79D).withOpacity(0.3),
+                                color: const Color(
+                                  0xFF00A79D,
+                                ).withValues(alpha: 0.3),
                                 width: 1,
                               ),
                             ),
@@ -1036,7 +1115,9 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                               color: const Color(0xFFFFF3E0),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: const Color(0xFFFF9800).withOpacity(0.3),
+                                color: const Color(
+                                  0xFFFF9800,
+                                ).withValues(alpha: 0.3),
                                 width: 1,
                               ),
                             ),
@@ -1278,7 +1359,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
       borderRadius: BorderRadius.circular(14),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           blurRadius: 12,
           offset: const Offset(0, 3),
         ),
@@ -1449,48 +1530,64 @@ class AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget todayWorkProgressCard(double w, double h) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: h * 0.018),
-      decoration: BoxDecoration(
-        color: const Color(0xffF1F1F1),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xffE3F2FD),
-                    shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MarketingTimelineScreen(),
+          ),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: w * 0.04,
+          vertical: h * 0.018,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xffF1F1F1),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xffE3F2FD),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.access_time,
+                      color: Color(0xff2196F3),
+                      size: 26,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.access_time,
-                    color: Color(0xff2196F3),
-                    size: 26,
+                  SizedBox(width: w * 0.03),
+                  const Flexible(
+                    child: Text(
+                      "Today Work Progress Report",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                SizedBox(width: w * 0.03),
-                const Flexible(
-                  child: Text(
-                    "Today Work Progress Report",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Icon(
-            Icons.trending_up_outlined,
-            size: 22,
-            color: Colors.black54,
-          ),
-        ],
+            const Icon(
+              Icons.trending_up_outlined,
+              size: 22,
+              color: Colors.black54,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1510,68 +1607,98 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           ],
         ),
         SizedBox(height: h * 0.02),
-        if (!isCheckedIn)
-          checkInOutButton(
-            label: "Attendance In",
-            color: const Color(0xFF4CAF50),
-            borderColor: const Color(0xFF4CAF50).withOpacity(0.4),
-            icon: Icons.login,
-            w: w,
-            h: h,
-            onTap: () async {
-              final result = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CheckInVerificationScreen(),
+        if (isTodayFinished)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF4CAF50).withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Color(0xFF4CAF50)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Your attendance for today is completed!",
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF2E7D32),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              );
-
-              if (result == true) {
-                setState(() {
-                  isCheckedIn = true;
-                });
-              }
-            },
-          ),
-        if (isCheckedIn)
-          checkInOutButton(
-            label: "Attendance out",
-            color: const Color(0xFFF44336),
-            borderColor: const Color(0xFFF44336),
-            icon: Icons.logout,
-            w: w,
-            h: h,
-            onTap: () async {
-              if (breakSwitch) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please end your break before checking out'),
-                    backgroundColor: Colors.red,
+              ],
+            ),
+          )
+        else ...[
+          if (!isCheckedIn)
+            checkInOutButton(
+              label: "Attendance In",
+              color: const Color(0xFF4CAF50),
+              borderColor: const Color(0xFF4CAF50).withValues(alpha: 0.4),
+              icon: Icons.login,
+              w: w,
+              h: h,
+              onTap: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CheckInVerificationScreen(),
                   ),
                 );
-                return;
-              }
-              final result = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CheckOutVerificationScreen(),
-                ),
-              );
 
-              if (result == true) {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('isCheckedIn', false);
+                if (result == true) {
+                  setState(() {
+                    isCheckedIn = true;
+                  });
+                }
+              },
+            ),
+          if (isCheckedIn)
+            checkInOutButton(
+              label: "Attendance out",
+              color: const Color(0xFFF44336),
+              borderColor: const Color(0xFFF44336),
+              icon: Icons.logout,
+              w: w,
+              h: h,
+              onTap: () async {
+                if (breakSwitch) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please end your break before checking out'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CheckOutVerificationScreen(),
+                  ),
+                );
 
-                setState(() {
-                  isCheckedIn = false;
-                  if (breakSwitch) {
-                    breakSwitch = false;
-                    stopBreakTimer();
-                  }
-                });
-              }
-            },
-          ),
+                if (result == true) {
+                  final prefs = await SharedPreferences.getInstance();
+                  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  await prefs.setBool('isCheckedIn', false);
+                  await prefs.setString('last_checkout_date', today);
+
+                  setState(() {
+                    isCheckedIn = false;
+                    isTodayFinished = true;
+                    if (breakSwitch) {
+                      breakSwitch = false;
+                      stopBreakTimer();
+                    }
+                  });
+                }
+              },
+            ),
+        ],
         SizedBox(height: h * 0.014),
         breakButton(w, h),
       ],
@@ -1610,7 +1737,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
+                      color: color.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, size: 24, color: color),
@@ -1622,7 +1749,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w500,
                         fontSize: 16,
-                        color: color.withOpacity(0.8),
+                        color: color.withValues(alpha: 0.8),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1721,7 +1848,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
             if (!isLoading)
               Switch(
                 value: breakSwitch,
-                activeColor: const Color(0xffD9D9D9),
+                activeThumbColor: const Color(0xffD9D9D9),
                 activeTrackColor: const Color(0xff1B2C61),
                 inactiveThumbColor: const Color(0xffD9D9D9),
                 inactiveTrackColor: Colors.grey.shade500,
@@ -1768,9 +1895,10 @@ class AttendanceScreenState extends State<AttendanceScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
+              UserAvatar(
                 radius: w * 0.08,
-                backgroundImage: const AssetImage('assets/profile.png'),
+                profileImageUrl: profilePhoto,
+                userName: userName,
               ),
               SizedBox(width: w * 0.03),
               Expanded(
@@ -1818,17 +1946,23 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: isCheckedIn ? Colors.green : Colors.grey,
+                            color: isTodayFinished
+                                ? Colors.blue
+                                : (isCheckedIn ? Colors.green : Colors.grey),
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          isCheckedIn ? "Checked In" : "Not Checked In",
+                          isTodayFinished
+                              ? "Completed"
+                              : (isCheckedIn ? "Checked In" : "Not Checked In"),
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: isCheckedIn ? Colors.green : Colors.grey,
+                            color: isTodayFinished
+                                ? Colors.blue
+                                : (isCheckedIn ? Colors.green : Colors.grey),
                           ),
                         ),
                       ],
@@ -2034,7 +2168,13 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                 SizedBox(height: h * 0.02),
                 Row(
                   children: [
-                    Expanded(child: monthlyStatBox("LOP", lopTakenStr)),
+                    Expanded(
+                      child: monthlyStatBox(
+                        "Unpaid(LOP)",
+                        lopTakenStr,
+                        highlight: true,
+                      ),
+                    ),
                     SizedBox(width: w * 0.03),
                     Expanded(
                       child: monthlyStatBox(
@@ -2148,7 +2288,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -2246,7 +2386,7 @@ class AttendanceScreenState extends State<AttendanceScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: finalColor.withOpacity(0.85),
+                        color: finalColor.withValues(alpha: 0.85),
                       ),
                     ),
                 ],

@@ -188,12 +188,13 @@ class _LeaveFormState extends State<LeaveForm> {
   }
 
   Future<void> _fetchLeaveTypes() async {
+    final prefs = await SharedPreferences.getInstance();
     final res = await http.post(
       Uri.parse(baseUrl),
       body: {
         "type": "2044",
-        "cid": "21472147",
-        "device_id": "123456",
+        "cid": prefs.getString('cid') ?? "",
+        "device_id": prefs.getString('device_id') ?? "",
         "lt": "123",
         "ln": "123",
       },
@@ -254,9 +255,9 @@ class _LeaveFormState extends State<LeaveForm> {
     setState(() => isLoading = true);
 
     try {
+      final prefs = await SharedPreferences.getInstance();
       if (employeeTableId == null) {
         // Try fetch again or fail
-        final prefs = await SharedPreferences.getInstance();
         if (!mounted) return;
         employeeTableId = prefs.getString("employee_table_id");
         if (employeeTableId == null) {
@@ -270,13 +271,13 @@ class _LeaveFormState extends State<LeaveForm> {
 
       var request = http.MultipartRequest("POST", Uri.parse(baseUrl));
       request.fields['type'] = '2043';
-      request.fields['cid'] = '21472147';
+      request.fields['cid'] = prefs.getString('cid') ?? "";
       request.fields['uid'] = employeeTableId!;
       request.fields['leave_type'] = leaveType!;
       request.fields['leave_start_date'] = _formatDate(fromDate!);
       request.fields['leave_end_date'] = _formatDate(toDate!);
       request.fields['reason'] = reason!;
-      request.fields['device_id'] = '123456';
+      request.fields['device_id'] = prefs.getString('device_id') ?? "";
       request.fields['lt'] = "143.23"; // Dummy coords if not available
       request.fields['ln'] = "123.12";
 
@@ -359,7 +360,7 @@ class _LeaveFormState extends State<LeaveForm> {
         children: [
           _label('Leave Type'),
           DropdownButtonFormField<String>(
-            value: leaveType,
+            initialValue: leaveType,
             hint: Text(
               'Select Leave Type',
               style: GoogleFonts.poppins(

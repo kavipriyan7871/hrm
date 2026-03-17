@@ -3,8 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LeaveService {
-  static const String baseUrl =
-      "https://erpsmart.in/total/api/m_api/";
+  static const String baseUrl = "https://erpsmart.in/total/api/m_api/";
 
   /// ===============================
   /// GET EMPLOYEE TABLE ID (FIXED)
@@ -27,12 +26,13 @@ class LeaveService {
   /// GET LEAVE TYPES
   /// ===============================
   static Future<List<String>> getLeaveTypes() async {
+    final prefs = await SharedPreferences.getInstance();
     final res = await http.post(
       Uri.parse(baseUrl),
       body: {
         "type": "2044",
-        "cid": "21472147",
-        "device_id": "123456",
+        "cid": prefs.getString('cid') ?? "",
+        "device_id": prefs.getString('device_id') ?? "",
         "lt": "123",
         "ln": "123",
       },
@@ -42,8 +42,7 @@ class LeaveService {
 
     if (data["error"] == false) {
       return List<String>.from(
-        data["data"]["leave_types"]
-            .map((e) => e["leave_type_name"].toString()),
+        data["data"]["leave_types"].map((e) => e["leave_type_name"].toString()),
       );
     }
     return [];
@@ -63,10 +62,11 @@ class LeaveService {
     if (empId == null || empId.isEmpty) {
       return {
         "error": true,
-        "error_msg": "Employee not found. Please re-login."
+        "error_msg": "Employee not found. Please re-login.",
       };
     }
 
+    final prefs = await SharedPreferences.getInstance();
     final res = await http.post(
       Uri.parse(baseUrl),
       body: {
@@ -76,8 +76,8 @@ class LeaveService {
         "leave_start_date": fromDate,
         "leave_end_date": toDate,
         "reason": reason,
-        "cid": "21472147",
-        "device_id": "123456",
+        "cid": prefs.getString('cid') ?? "",
+        "device_id": prefs.getString('device_id') ?? "",
         "lt": "123",
         "ln": "123",
       },

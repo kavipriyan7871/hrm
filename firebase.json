@@ -1,0 +1,28 @@
+{
+    "functions": {
+        "source": "functions"
+    },
+    "flutter": {
+        "platforms": {
+            "android": {
+                "default": {
+                    "projectId": "hrmsmart-e63c7",
+                    "appId": "1:52450359227:android:7248ce44a07808c124769e",
+                    "fileOutput": "android/app/google-services.json"
+                }
+            },
+            "dart": {
+                "lib/firebase_options.dart": {
+                    "projectId": "hrmsmart-e63c7",
+                    "configurations": {
+                        "android": "1:52450359227:android:7248ce44a07808c124769e",
+                        "ios": "1:52450359227:ios:bf571a035efecea524769e",
+                        "macos": "1:52450359227:ios:bf571a035efecea524769e",
+                        "web": "1:52450359227:web:ccb1dac49fa7131424769e",
+                        "windows": "1:52450359227:web:64556280912fdb5624769e"
+                    }
+                }
+            }
+        }
+    }
+}

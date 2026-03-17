@@ -1,9 +1,8 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -26,8 +25,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
   String? _error;
   Map<String, dynamic>? _payrollData;
 
-  Map<String, dynamic>? _requestParams; // For debugging
-
   // Month and Year selection
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
@@ -43,7 +40,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
-      _requestParams = null;
     });
 
     try {
@@ -52,22 +48,12 @@ class _PayrollScreenState extends State<PayrollScreen> {
           prefs.getString('employee_table_id') ??
           prefs.getInt('uid')?.toString() ??
           "";
-      final cid = prefs.getString('cid') ?? "21472147";
+      final cid = prefs.getString('cid') ?? "";
+      final deviceId = prefs.getString('device_id') ?? "";
 
-      String? deviceId = prefs.getString('device_id');
-      if (deviceId == null) {
-        // Fallback or explicit fetch if stored not found
-        final deviceInfo = DeviceInfoPlugin();
-        if (Platform.isAndroid) {
-          final androidInfo = await deviceInfo.androidInfo;
-          deviceId = androidInfo.id;
-        } else if (Platform.isIOS) {
-          final iosInfo = await deviceInfo.iosInfo;
-          deviceId = iosInfo.identifierForVendor;
-        } else {
-          deviceId = "unknown_device";
-        }
-      }
+      debugPrint(
+        "Fetched from SharedPreferences: cid=$cid, deviceId=$deviceId",
+      );
 
       // Check permissions and get location
       final position = await _determinePosition();
@@ -75,27 +61,14 @@ class _PayrollScreenState extends State<PayrollScreen> {
       final month = _selectedMonth.toString().padLeft(2, '0');
       final year = _selectedYear.toString();
 
-      // Store request params for debugging
-      _requestParams = {
-        "cid": cid,
-        "uid": uid,
-        "month": month,
-        "year": year,
-        "device_id": deviceId,
-        "lt": position.latitude.toString(),
-        "ln": position.longitude.toString(),
-      };
-
-      print("Requesting Payroll with: $_requestParams");
-
       final response = await PayrollRepo.getPayroll(
         cid: cid,
         uid: uid,
         month: month,
         year: year,
-        deviceId: deviceId!,
-        lat: position.latitude.toString(),
-        lng: position.longitude.toString(),
+        deviceId: deviceId,
+        lat: position?.latitude.toString() ?? "0.0",
+        lng: position?.longitude.toString() ?? "0.0",
       );
 
       print("Payroll API Response: $response");
@@ -108,8 +81,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
           _isLoading = false;
         });
       } else {
+        // Instead of showing error screen, show UI with zero values
         setState(() {
-          _error = response["error_msg"] ?? "Failed to fetch payroll data";
+          _payrollData = null; // UI handles null by showing 0
+          _error = null;
           _isLoading = false;
         });
       }
@@ -117,42 +92,40 @@ class _PayrollScreenState extends State<PayrollScreen> {
       print("Payroll Fetch Error: $e");
       if (mounted) {
         setState(() {
-          _error = "Error: $e";
+          _payrollData = null;
+          _error = null;
           _isLoading = false;
         });
       }
     }
   }
 
-  Future<Position> _determinePosition() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  Future<Position?> _determinePosition() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      // Location services are not enabled don't continue
-      // accessing the position and request users of the
-      // App to enable the location services.
-      return Future.error('Location services are disabled.');
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        return Future.error('Location permissions are denied');
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
       }
-    }
 
-    if (permission == LocationPermission.deniedForever) {
-      return Future.error(
-        'Location permissions are permanently denied, we cannot request permissions.',
+      if (permission == LocationPermission.deniedForever) return null;
+
+      // Try last known first (instant)
+      Position? lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) return lastKnown;
+
+      // Fast current position (low accuracy, short timeout)
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 3),
       );
+    } catch (e) {
+      print("Location Fetch Error: $e");
+      return null;
     }
-
-    return await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.medium,
-    );
   }
 
   Future<void> _showMonthYearPicker() async {

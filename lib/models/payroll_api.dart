@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class PayrollRepo {
@@ -25,11 +25,9 @@ class PayrollRepo {
         "ln": lng,
       };
 
-      print("Get Payroll Request Body: $body");
-
-      final response = await http.post(Uri.parse(baseUrl), body: body);
-
-      print("Get Payroll Response: ${response.body}");
+      final response = await http
+          .post(Uri.parse(baseUrl), body: body)
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         try {

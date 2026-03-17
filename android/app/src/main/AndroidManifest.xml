@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.erp.smart.hrm">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.erpsmart.hrm">
 
     <!-- ✅ INTERNET PERMISSION (REQUIRED FOR API CALLS) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- ✅ LOCATION PERMISSIONS -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -12,6 +15,13 @@
     <!-- ✅ CAMERA PERMISSIONS -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- ✅ AUDIO RECORDING PERMISSION -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- ✅ BIOMETRIC PERMISSIONS -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+
     <!-- ✅ STORAGE PERMISSIONS -->
     <!-- Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -19,11 +29,16 @@
     <!-- Below Android 13 (API 32 and below) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+        android:maxSdkVersion="32"
+        tools:replace="android:maxSdkVersion" />
 
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+        android:maxSdkVersion="32"
+        tools:replace="android:maxSdkVersion" />
+
+    <!-- ✅ NOTIFICATION PERMISSION (ANDROID 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="hrm"

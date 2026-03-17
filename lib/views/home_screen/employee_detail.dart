@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hrm/views/widgets/user_avatar.dart';
 
 class EmployeeDetailsScreen extends StatefulWidget {
   const EmployeeDetailsScreen({super.key});
@@ -56,7 +57,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    // final size = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -132,12 +133,10 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
               child: CircleAvatar(
                 radius: 50,
                 backgroundColor: Colors.white,
-                child: CircleAvatar(
+                child: UserAvatar(
                   radius: 46,
-                  backgroundColor: Colors.grey.shade200,
-                  backgroundImage: profilePhoto.isNotEmpty
-                      ? NetworkImage(profilePhoto)
-                      : const AssetImage("assets/profile.png") as ImageProvider,
+                  profileImageUrl: profilePhoto,
+                  userName: userName,
                 ),
               ),
             ),
@@ -157,7 +156,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color: Colors.black.withValues(alpha: 0.12),
                       blurRadius: 10,
                       offset: const Offset(0, 7),
                     ),
@@ -208,14 +207,14 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
             title: "Personal Details",
             open: personal,
             onTap: () => setState(() => personal = !personal),
-            child: PersonDetails(),
+            child: personDetails(),
           ),
           accordion(
             icon: Icons.school,
             title: "Educational Details",
             open: edu,
             onTap: () => setState(() => edu = !edu),
-            child: EducationDetails(),
+            child: educationDetails(),
           ),
         ],
       ),
@@ -279,7 +278,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
     );
   }
 
-  Widget PersonDetails() {
+  Widget personDetails() {
     return Column(
       children: [
         row("Date of Birth", dob),
@@ -291,7 +290,7 @@ class _EmployeeDetailsScreenState extends State<EmployeeDetailsScreen> {
     );
   }
 
-  Widget EducationDetails() {
+  Widget educationDetails() {
     return Column(
       children: [
         row("Institution Name", institutionName),

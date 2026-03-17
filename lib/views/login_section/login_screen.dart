@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:hrm/views/login_section/sign-in_sms.dart';
-import 'package:hrm/views/login_section/sign-in_whatsapp.dart';
-import 'package:hrm/views/login_section/sign-up.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hrm/views/login_section/sign_in_sms.dart';
+import 'package:hrm/views/login_section/sign_in_whatsapp.dart';
+import 'package:hrm/views/login_section/sign_up.dart';
 import '../../models/login_api.dart';
+import 'package:hrm/services/device_service.dart';
 import 'otp_popup.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,6 +18,13 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   bool isLoadingLogin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    DeviceService.initDeviceInfo(); // Refresh device id & app signature on landing
+  }
+
   @override
   Widget build(BuildContext context) {
     // MediaQuery
@@ -120,14 +129,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             setState(() => isLoadingLogin = true);
 
                             try {
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              final lat =
+                                  prefs.getDouble('lat')?.toString() ?? "0.0";
+                              final lng =
+                                  prefs.getDouble('lng')?.toString() ?? "0.0";
+                              final deviceId =
+                                  prefs.getString('device_id') ?? "";
+                              final appSignature =
+                                  prefs.getString('app_signature') ?? "";
+
                               final response = await LoginApi.sendOtp(
                                 mobile: _emailController.text.trim(),
-                                cid: "21472147",
                                 type: "2000",
-                                deviceId: "12345",
-                                lat: "145",
-                                lng: "145",
-                                appSignature: "smart123",
+                                deviceId: deviceId,
+                                lat: lat,
+                                lng: lng,
+                                appSignature: appSignature,
                               );
 
                               debugPrint("SEND OTP RESPONSE => $response");
@@ -135,6 +154,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               if (response["error"] == false) {
                                 final String cusId =
                                     response["cus_id"]?.toString() ?? "";
+
+                                if (response.containsKey("cid") &&
+                                    response["cid"] != null) {
+                                  final String cid = response["cid"].toString();
+                                  await prefs.setString("cid", cid);
+                                }
+
                                 if (mounted) {
                                   showModalBottomSheet(
                                     context: context,
@@ -282,7 +308,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
-                      "Don’t Have an Account? ",
+                      "Donâ€™t Have an Account? ",
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

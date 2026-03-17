@@ -1,3 +1,4 @@
+﻿import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -25,21 +26,13 @@ class ExpenseRepo {
         "cid": cid,
         "uid": uid,
         "amount": amount,
-        "description":
-            description, // Note: purpose is usually mapped to description or separate field. User said description. I'll append purpose? Or just description.
-        // Screen has "Category" (Purpose) and "Description".
-        // API param list has "description".
-        // I will adhere to the user provided params: "amount:1500, description:Client meeting..., expense_date:..., type:2059..."
-        // I'll assume purpose goes into description or is ignored? The UI has both.
-        // I'll concatenate: "$purpose - $description" into description field for now to be safe, or just send description.
-        // Let's send description as is.
+        "description": description,
         "type": "2059",
         "expense_date": expenseDate,
         "device_id": deviceId,
         "lt": lat,
         "ln": lng,
-        "purpose":
-            purpose, // Adding strictly in case backend accepts it, otherwise rely on description.
+        "purpose": purpose,
       });
 
       if (receiptImage != null) {
@@ -48,12 +41,10 @@ class ExpenseRepo {
         );
       }
 
-      print("Add Expense Request Fields: ${request.fields}");
-
-      var streamedResponse = await request.send();
+      var streamedResponse = await request.send().timeout(
+        const Duration(seconds: 20),
+      );
       var response = await http.Response.fromStream(streamedResponse);
-
-      print("Add Expense Response: ${response.body}");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -64,7 +55,7 @@ class ExpenseRepo {
         };
       }
     } catch (e) {
-      print("Add Expense API Error: $e");
+      debugPrint("Add Expense API Error: $e");
       return {"error": true, "error_msg": e.toString()};
     }
   }
@@ -85,17 +76,15 @@ class ExpenseRepo {
         "uid": uid,
         "month": month,
         "year": year,
-        "type": "2060", // Assumed View Expense Type
+        "type": "2060",
         "device_id": deviceId,
         "lt": lat,
         "ln": lng,
       };
 
-      print("Get Expenses Request Body: $body");
-
-      final response = await http.post(Uri.parse(baseUrl), body: body);
-
-      print("Get Expenses Response: ${response.body}");
+      final response = await http
+          .post(Uri.parse(baseUrl), body: body)
+          .timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -106,7 +95,7 @@ class ExpenseRepo {
         };
       }
     } catch (e) {
-      print("Get Expenses API Error: $e");
+      debugPrint("Get Expenses API Error: $e");
       return {"error": true, "error_msg": e.toString()};
     }
   }
