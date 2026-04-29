@@ -1,0 +1,967 @@
+import 'dart:io';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:dotted_border/dotted_border.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:convert';
+import '../../services/face_detector_service.dart';
+import 'package:hrm/models/attendance_api.dart';
+
+class CheckOutVerificationScreen extends StatefulWidget {
+  const CheckOutVerificationScreen({super.key});
+
+  @override
+  State<CheckOutVerificationScreen> createState() =>
+      _CheckOutVerificationScreenState();
+}
+
+class _CheckOutVerificationScreenState
+    extends State<CheckOutVerificationScreen> {
+  final TextEditingController outTimeController = TextEditingController();
+  final TextEditingController locationController = TextEditingController();
+
+  Timer? _timer;
+
+  String? selectedMode;
+  String? selectedVehicleMode;
+  File? _vehicleImage;
+
+  File? _image;
+  final ImagePicker _picker = ImagePicker();
+  final FaceDetectorService _faceDetectorService = FaceDetectorService();
+
+  bool isLoading = false;
+  String uid = "";
+  String? cid;
+  String? serverUidString;
+  String? deviceId;
+  Position? currentPosition;
+
+  List<dynamic> workTypes = [];
+  List<dynamic> transportTypes = [];
+  bool isInitialLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUid();
+    _getDeviceId();
+    _fetchLocationAndTime();
+    _fetchDropdownData();
+  }
+
+  Future<void> _fetchDropdownData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dId = prefs.getString('device_id') ?? "";
+    final lat = prefs.getDouble('lat')?.toString() ?? "0.0";
+    final lng = prefs.getDouble('lng')?.toString() ?? "0.0";
+    final companyId = prefs.getString('cid') ?? "";
+
+    try {
+      final workRes = await AttendanceApi.fetchWorkTypes(
+        cid: companyId,
+        deviceId: dId,
+        lat: lat,
+        lng: lng,
+      );
+      final transportRes = await AttendanceApi.fetchTransportTypes(
+        cid: companyId,
+        deviceId: dId,
+        lat: lat,
+        lng: lng,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (workRes["error"] == false) {
+            workTypes = workRes["data"]?["work_types"] ?? [];
+          }
+          if (transportRes["error"] == false) {
+            transportTypes = transportRes["data"]?["transport_types"] ?? [];
+          }
+          if (workTypes.isEmpty) {
+            workTypes = [
+              {"id": "1", "name": "Office"},
+              {"id": "2", "name": "Remote"},
+              {"id": "3", "name": "Marketing"},
+            ];
+          }
+          if (transportTypes.isEmpty) {
+            transportTypes = [
+              {"id": "1", "name": "Two Wheeler", "photo_required": true},
+              {"id": "2", "name": "Four Wheeler", "photo_required": true},
+              {"id": "3", "name": "Bus", "photo_required": false},
+              {"id": "4", "name": "Train", "photo_required": false},
+            ];
+          }
+          isInitialLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching dropdown data: $e");
+      if (mounted) {
+        setState(() {
+          workTypes = [
+            {"id": "1", "name": "Office"},
+            {"id": "2", "name": "Remote"},
+            {"id": "3", "name": "Marketing"},
+          ];
+          transportTypes = [
+            {"id": "1", "name": "Two Wheeler", "photo_required": true},
+            {"id": "2", "name": "Four Wheeler", "photo_required": true},
+            {"id": "3", "name": "Bus", "photo_required": false},
+            {"id": "4", "name": "Train", "photo_required": false},
+          ];
+          isInitialLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    outTimeController.dispose();
+    locationController.dispose();
+    _faceDetectorService.dispose();
+    super.dispose();
+  }
+
+  void _updateTime() {
+    if (mounted) {
+      final now = DateTime.now();
+      setState(() {
+        outTimeController.text = DateFormat('HH:mm:ss').format(now);
+      });
+    }
+  }
+
+  Future<void> _getDeviceId() async {
+    final deviceInfo = DeviceInfoPlugin();
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      deviceId = androidInfo.id;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      deviceId = iosInfo.identifierForVendor;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _fetchLocationAndTime() async {
+    // 1. Set Current Time and Start Timer
+    _updateTime();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _updateTime();
+    });
+
+    // 2. Fetch Location
+    setState(() {
+      locationController.text = "Fetching location...";
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          setState(
+            () => locationController.text = "Location services disabled",
+          );
+        }
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            setState(() => locationController.text = "Permission denied");
+          }
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(
+            () => locationController.text = "Permission permanently denied",
+          );
+        }
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      currentPosition = position;
+
+      // Reverse geocoding to get address
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        String address =
+            "${place.locality ?? ''}, ${place.subAdministrativeArea ?? ''}"
+                .trim();
+        if (address.startsWith(',')) address = address.substring(1).trim();
+        if (address.endsWith(',')) {
+          address = address.substring(0, address.length - 1).trim();
+        }
+
+        if (mounted) {
+          setState(() {
+            locationController.text = address.isEmpty
+                ? "Location found"
+                : address;
+          });
+        }
+      } else {
+        if (mounted)
+          setState(() => locationController.text = "Address not found");
+      }
+    } catch (e) {
+      debugPrint("LOCATION ERROR => $e");
+      if (mounted)
+        setState(() => locationController.text = "Error getting location");
+    }
+  }
+
+  Future<void> _loadUid() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        uid =
+            prefs.getString('uid') ??
+            prefs.getString('login_cus_id') ??
+            prefs.getString('server_uid') ??
+            prefs.getString('employee_table_id') ??
+            "";
+        cid = prefs.getString('cid') ?? "";
+        serverUidString = prefs.getString('server_uid');
+      });
+    }
+    debugPrint("LOADED UID: $uid, CID: $cid, SERVER_UID: $serverUidString");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7F7),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF26A69A),
+        foregroundColor: Colors.white,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Check out Verification',
+          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w500),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: size.width * 0.06,
+            vertical: size.height * 0.03,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Check out Verification',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+
+              Visibility(
+                visible: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// Out Time
+                    _label('Out Time'),
+                    _textField(
+                      controller: outTimeController,
+                      hint: 'Current Time',
+                      readOnly: true,
+                      prefixIcon: Icons.access_time_outlined,
+                    ),
+                    const SizedBox(height: 14),
+
+                    /// Location
+                    _label('Location'),
+                    _textField(
+                      controller: locationController,
+                      hint: '',
+                      readOnly: true, // Restricted manual location editing
+                      prefixIcon: Icons.my_location,
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                ),
+              ),
+
+              _label('Work Mode'),
+              _dropdownField(),
+              const SizedBox(height: 18),
+
+              if (isInitialLoading)
+                const Center(child: CircularProgressIndicator())
+              else ...[
+                if (selectedMode?.toLowerCase() == 'marketing') ...[
+                  _label('Vehicle Mode'),
+                  _vehicleDropdownField(),
+                  const SizedBox(height: 18),
+
+                  if (_isVehiclePhotoRequired()) ...[
+                    _label('Vehicle Photo'),
+                    _vehiclePhotoCard(size),
+                    const SizedBox(height: 18),
+                  ],
+                ],
+                _selfieCard(size),
+              ],
+              SizedBox(height: size.height * 0.1),
+
+              /// Submit Button
+              Center(
+                child: SizedBox(
+                  width: size.width * 0.55,
+                  height: 44,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2AA89A),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    onPressed: isLoading ? null : _submit,
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Submit',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ---------- UI Helpers ----------
+
+  Widget _label(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+    );
+  }
+
+  Widget _textField({
+    required TextEditingController controller,
+    required String hint,
+    bool readOnly = false,
+    VoidCallback? onTap,
+    IconData? prefixIcon,
+  }) {
+    return SizedBox(
+      height: 48,
+      child: TextField(
+        controller: controller,
+        readOnly: readOnly,
+        onTap: onTap,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: prefixIcon != null
+              ? Icon(prefixIcon, color: const Color(0xFF26A69A), size: 20)
+              : null,
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 0,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dropdownField() {
+    return SizedBox(
+      height: 48,
+      child: DropdownButtonFormField<String>(
+        value: selectedMode,
+        hint: const Text('Work Mode'),
+        isExpanded: true,
+        icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF26A69A)),
+        style: const TextStyle(fontSize: 14, color: Colors.black),
+        items: workTypes.map<DropdownMenuItem<String>>((dynamic type) {
+          return DropdownMenuItem<String>(
+            value: type["name"].toString(),
+            child: Text(type["name"].toString()),
+          );
+        }).toList(),
+        onChanged: (value) {
+          setState(() {
+            selectedMode = value;
+            if (selectedMode?.toLowerCase() != 'marketing') {
+              selectedVehicleMode = null;
+              _vehicleImage = null;
+            }
+          });
+        },
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: const Color(0xFFD7FFFA),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 0,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _selfieCard(Size size) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Selfie Verification',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: DottedBorder(
+              color: Colors.grey.shade400,
+              strokeWidth: 1.5,
+              dashPattern: const [6, 4],
+              borderType: BorderType.RRect,
+              radius: const Radius.circular(8),
+              child: SizedBox(
+                height: size.height * 0.18,
+                width: 300,
+                child: _image != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          _image!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(
+                          Icons.camera_alt_outlined,
+                          size: 34,
+                          color: Color(0xFF2AA89A),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: SizedBox(
+              height: 38,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2AA89A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                onPressed: _takeSelfie,
+                icon: const Icon(Icons.camera_alt, size: 16),
+                label: Text(
+                  _image == null ? 'Take Selfie' : 'Retake Selfie',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vehicleDropdownField() {
+    return SizedBox(
+      height: 48,
+      child: DropdownButtonFormField<String>(
+        value: selectedVehicleMode,
+        hint: const Text('Vehicle Mode'),
+        isExpanded: true,
+        icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF26A69A)),
+        style: const TextStyle(fontSize: 14, color: Colors.black),
+        items: transportTypes.map<DropdownMenuItem<String>>((dynamic type) {
+          return DropdownMenuItem<String>(
+            value: type["name"].toString(),
+            child: Text(type["name"].toString()),
+          );
+        }).toList(),
+        onChanged: (value) {
+          setState(() {
+            selectedVehicleMode = value;
+            _vehicleImage = null; // Reset image if mode changes
+          });
+        },
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 0,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2AA89A)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _vehiclePhotoCard(Size size) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Vehicle Photo Verification',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: DottedBorder(
+              color: Colors.grey.shade400,
+              strokeWidth: 1.5,
+              dashPattern: const [6, 4],
+              borderType: BorderType.RRect,
+              radius: const Radius.circular(8),
+              child: SizedBox(
+                height: size.height * 0.18,
+                width: 300,
+                child: _vehicleImage != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          _vehicleImage!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(
+                          Icons.directions_car_filled_outlined,
+                          size: 34,
+                          color: Color(0xFF2AA89A),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: SizedBox(
+              height: 38,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2AA89A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                onPressed: _takeVehiclePhoto,
+                icon: const Icon(Icons.camera_alt, size: 16),
+                label: Text(
+                  _vehicleImage == null ? 'Take Photo' : 'Retake Photo',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _takeVehiclePhoto() async {
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 50,
+      maxWidth: 800,
+      maxHeight: 800,
+    );
+    if (photo != null) {
+      if (mounted) {
+        setState(() {
+          _vehicleImage = File(photo.path);
+        });
+      }
+    }
+  }
+
+  bool _isVehiclePhotoRequired() {
+    if (selectedVehicleMode == null) return false;
+    final lowerName = selectedVehicleMode!.toLowerCase();
+
+    // Explicitly NO photo for public transport
+    if (lowerName.contains("bus") || lowerName.contains("train")) {
+      return false;
+    }
+
+    // Force true for wheelers as requested
+    if (lowerName.contains("wheeler") || lowerName.contains("bike") || lowerName.contains("car")) {
+      return true;
+    }
+    final transport = transportTypes.firstWhere(
+      (e) => e["name"] == selectedVehicleMode,
+      orElse: () => null,
+    );
+    return transport?["photo_required"] == true || transport?["photo_required"] == "true" || transport?["photo_required"] == 1;
+  }
+
+  /// ---------- Actions ----------
+
+  Future<void> _takeSelfie() async {
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+      imageQuality: 50,
+      maxWidth: 800,
+      maxHeight: 800,
+    );
+
+    if (photo != null) {
+      final String extension = photo.path.split('.').last.toLowerCase();
+      if (extension == 'jpeg' || extension == 'jpg' || extension == 'png') {
+        // Start Analysis
+        setState(() => isLoading = true);
+
+        try {
+          final File imageFile = File(photo.path);
+          final FaceDetectionResult result = await _faceDetectorService
+              .detectFace(imageFile);
+
+          if (!result.isValid) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(result.error ?? 'Face detection failed.'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+
+          // Verify Identification matches Check-in
+          final prefs = await SharedPreferences.getInstance();
+          final String? savedProfileStr = prefs.getString('checkin_face_profile');
+
+          if (savedProfileStr == null) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Error: No check-in face profile found. Please contact support.',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+
+          final List<double> currentProfile =
+              _faceDetectorService.getFaceProfile(result.face!);
+          if (currentProfile.isEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Could not generate face profile. Try again.'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            return;
+          }
+
+          final List<dynamic> savedProfileRaw = jsonDecode(savedProfileStr);
+          final List<double> savedProfile =
+              savedProfileRaw.map((e) => (e as num).toDouble()).toList();
+
+          final bool isMatch = _faceDetectorService.isSamePersona(
+            currentProfile,
+            savedProfile,
+          );
+
+          if (!isMatch) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Face verification failed: This face does not match the check-in selfie.',
+                  ),
+                  duration: Duration(seconds: 4),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+
+          if (mounted) {
+            setState(() {
+              _image = imageFile;
+            });
+          }
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Full single face identified successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint("CHECK-OUT FACE DETECTION ERROR => $e");
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Error analyzing face. Please try again.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        } finally {
+          if (mounted) setState(() => isLoading = false);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Only JPEG and PNG images are allowed'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _submit() async {
+    String? errorMsg;
+    if (uid.isEmpty) {
+      errorMsg = 'User ID not found. Please log in again.';
+    } else if (outTimeController.text.isEmpty) {
+      errorMsg = 'Please select Out Time';
+    } else if (locationController.text.isEmpty ||
+        locationController.text == "Fetching location...") {
+      errorMsg = 'Please wait for location to be fetched';
+    } else if (selectedMode == null) {
+      errorMsg = 'Please select Work Mode';
+    } else if (selectedMode?.toLowerCase() == 'marketing' &&
+        selectedVehicleMode == null) {
+      errorMsg = 'Please select Vehicle Mode';
+    } else if (selectedMode?.toLowerCase() == 'marketing' &&
+        _isVehiclePhotoRequired() &&
+        _vehicleImage == null) {
+      errorMsg = 'Please upload vehicle photo';
+    } else if (_image == null) {
+      errorMsg = 'Please take a selfie for verification';
+    }
+
+    if (errorMsg != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('token');
+
+      String transportId = "";
+      if (selectedVehicleMode != null) {
+        final transport = transportTypes.firstWhere(
+          (e) => e["name"] == selectedVehicleMode,
+          orElse: () => null,
+        );
+        if (transport != null) {
+          transportId = transport["id"].toString();
+        }
+      }
+
+      final responseData = await AttendanceApi.checkOut(
+        cid: cid ?? "",
+        uid: uid,
+        outTime: outTimeController.text,
+        loc: locationController.text,
+        workMode: selectedMode?.toLowerCase() ?? "",
+        deviceId: deviceId ?? "",
+        lat: currentPosition?.latitude.toString() ?? "0.0",
+        lng: currentPosition?.longitude.toString() ?? "0.0",
+        transportId: transportId,
+        token: token,
+        selfie: _image,
+        vehiclePhoto: _vehicleImage,
+      );
+
+      debugPrint("CHECK-OUT RESPONSE => $responseData");
+
+      final bool isSuccess =
+          responseData["error"] == false ||
+          responseData["error"] == "false" ||
+          responseData["message"].toString().toLowerCase().contains(
+            "success",
+          ) ||
+          responseData["message"].toString().toLowerCase().contains(
+            "successfully",
+          );
+
+      if (isSuccess) {
+        final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        await prefs.setBool('isCheckedIn', false);
+        await prefs.setString('last_checkout_date', today);
+        await prefs.setBool('is_on_break', false);
+
+        // Save token if it exists in the response
+        final String? newToken =
+            responseData["token"] ?? responseData["data"]?["token"];
+        if (newToken != null && newToken.isNotEmpty) {
+          await prefs.setString('token', newToken);
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                responseData["message"] ?? 'Checked out successfully',
+              ),
+              backgroundColor: const Color(0xFF2AA89A),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        final String errorMsg = responseData["message"] ?? "Check-out failed";
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("CHECK-OUT ERROR => $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Server error occurred'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+}

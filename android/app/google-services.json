@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "52450359227",
+    "project_id": "hrmsmart-e63c7",
+    "storage_bucket": "hrmsmart-e63c7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:52450359227:android:a7015846a87cd61c24769e",
+        "android_client_info": {
+          "package_name": "com.erpsmart.hrm"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "52450359227-c9faac27k8qb62vhfd43r1dj05k8ja5v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.erpsmart.hrm",
+            "certificate_hash": "b2cd3a2fd8b960146b13455d6c9ece3f6f249bc7"
+          }
+        },
+        {
+          "client_id": "52450359227-nejghtgkg1i7ob5mj9lr40m3a96tjqm9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9i0aH1-2zNn_BS9MbyZkjHKxSk029_dE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "52450359227-nejghtgkg1i7ob5mj9lr40m3a96tjqm9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "52450359227-3qsuod37lnurt3pl22ecsps0i8fmfbms.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.hrm"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

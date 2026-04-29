@@ -1,0 +1,41 @@
+﻿Analyzing hrm...                                                
+
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\chat\chat.dart:149:33 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\chat\chat.dart:150:40 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\chat\chat.dart:157:40 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\chat\group_info.dart:481:37 - use_build_context_synchronously
+   info - 'Share' is deprecated and shouldn't be used. Use SharePlus instead - lib\views\home\payroll.dart:866:15 - deprecated_member_use
+   info - 'shareXFiles' is deprecated and shouldn't be used. Use SharePlus.instance.share() instead - lib\views\home\payroll.dart:866:21 - deprecated_member_use
+   info - 'Share' is deprecated and shouldn't be used. Use SharePlus instead - lib\views\home\payroll.dart:890:13 - deprecated_member_use
+   info - 'shareXFiles' is deprecated and shouldn't be used. Use SharePlus.instance.share() instead - lib\views\home\payroll.dart:890:19 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\home\security.dart:248:46 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\home\settings.dart:447:33 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\home\ticket_raise.dart:158:28 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\home\ticket_raise.dart:177:21 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\home\ticket_raise.dart:179:9 - use_build_context_synchronously
+   info - The variable name 'PersonDetails' isn't a lowerCamelCase identifier - lib\views\home_screen\employee_detail.dart:281:10 - non_constant_identifier_names
+   info - The variable name 'EducationDetails' isn't a lowerCamelCase identifier - lib\views\home_screen\employee_detail.dart:293:10 - non_constant_identifier_names
+   info - The variable name '_calculateBalances_Old' isn't a lowerCamelCase identifier - lib\views\home_screen\leave_management.dart:295:8 - non_constant_identifier_names
+warning - The declaration '_calculateBalances_Old' isn't referenced - lib\views\home_screen\leave_management.dart:295:8 - unused_element
+warning - The value of the field '_isEmpLoading' isn't used - lib\views\home_screen\marketing_checkin.dart:23:8 - unused_field
+   info - Don't use 'BuildContext's across async gaps - lib\views\home_screen\marketing_checkin.dart:312:41 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\home_screen\marketing_checkin.dart:352:13 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\home_screen\marketing_checkin.dart:630:69 - use_build_context_synchronously
+warning - The value of the field '_isEmpLoading' isn't used - lib\views\home_screen\marketing_checkout.dart:36:8 - unused_field
+   info - Don't use 'BuildContext's across async gaps - lib\views\home_screen\reports.dart:107:30 - use_build_context_synchronously
+   info - 'Share' is deprecated and shouldn't be used. Use SharePlus instead - lib\views\home_screen\reports.dart:342:13 - deprecated_member_use
+   info - 'shareXFiles' is deprecated and shouldn't be used. Use SharePlus.instance.share() instead - lib\views\home_screen\reports.dart:342:19 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\login_screen.dart:156:37 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\login_screen.dart:170:56 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\login_screen.dart:183:54 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\login_section\otp_popup.dart:385:11 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\login_section\sign_in_sms.dart:314:11 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\sign_in_whatsapp.dart:174:37 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\sign_in_whatsapp.dart:188:56 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\views\login_section\sign_in_whatsapp.dart:200:54 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\login_section\sign_up.dart:439:13 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\views\security\app_lock_screen.dart:392:32 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps - lib\views\security\face_auth_verification.dart:52:23 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\security\face_auth_verification.dart:68:23 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\views\security\face_auth_verification.dart:94:23 - use_build_context_synchronously
+
